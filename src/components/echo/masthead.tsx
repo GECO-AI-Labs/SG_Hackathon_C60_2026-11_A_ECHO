@@ -52,7 +52,6 @@ export function Masthead({ name, pending, dateline }: { name: string; pending: n
         </nav>
       </div>
       <div className="h-[3px] bg-rule" />
-      <div className="mt-[3px] h-px bg-rule" />
     </header>
   );
 }
