@@ -1,0 +1,217 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-schibsted);
+  --font-mono: var(--font-plex-mono);
+  --font-heading: var(--font-newsreader);
+  --font-serif: var(--font-newsreader);
+  --color-pencil: var(--pencil);
+  --color-pencil-soft: var(--pencil-soft);
+  --color-approve: var(--approve);
+  --color-approve-soft: var(--approve-soft);
+  --color-inferred: var(--inferred);
+  --color-inferred-soft: var(--inferred-soft);
+  --color-rule: var(--rule);
+  --color-chart-grid: var(--chart-grid);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   ECHO design tokens: "editorial newsroom"
+   Paper, ink, and one red pencil. Change brand here, nowhere else.
+   Chart series 1-4 are validated for colour-blind safety
+   (dataviz validator, light on #f6f2ea, dark on #1a1916).
+   ───────────────────────────────────────────────────────────── */
+:root {
+  --background: #f6f2ea;          /* paper */
+  --foreground: #1c1b19;          /* ink */
+  --card: #fbf9f4;
+  --card-foreground: #1c1b19;
+  --popover: #fbf9f4;
+  --popover-foreground: #1c1b19;
+  --primary: #1c1b19;             /* ink buttons */
+  --primary-foreground: #f6f2ea;
+  --secondary: #ebe5d9;
+  --secondary-foreground: #1c1b19;
+  --muted: #ece6da;
+  --muted-foreground: #6b655b;
+  --accent: #ebe5d9;
+  --accent-foreground: #1c1b19;
+  --destructive: #b3361f;
+  --border: #d9d1c2;              /* hairline rules */
+  --input: #d2c9b8;
+  --ring: #c8402a;
+  --radius: 0.125rem;             /* 2px: near-square, print-like */
+
+  --pencil: #c8402a;              /* the one accent: editor's red pencil */
+  --pencil-soft: #f3dcd3;
+  --approve: #2f6b3a;             /* status: approved (always with icon + label) */
+  --approve-soft: #dfe9dc;
+  --inferred: #8a6a12;            /* status: AI-inferred, unconfirmed */
+  --inferred-soft: #f1e6c8;
+  --rule: #1c1b19;                /* heavy masthead rule */
+
+  --chart-1: #c8402a;
+  --chart-2: #1f6e9c;
+  --chart-3: #a87a12;
+  --chart-4: #8a4f9e;
+  --chart-5: #6b655b;
+  --chart-grid: #e2dbcd;
+
+  --sidebar: #f1ece2;
+  --sidebar-foreground: #1c1b19;
+  --sidebar-primary: #1c1b19;
+  --sidebar-primary-foreground: #f6f2ea;
+  --sidebar-accent: #e6dfd1;
+  --sidebar-accent-foreground: #1c1b19;
+  --sidebar-border: #d9d1c2;
+  --sidebar-ring: #c8402a;
+}
+
+.dark {
+  --background: #1a1916;
+  --foreground: #ece6da;
+  --card: #211f1b;
+  --card-foreground: #ece6da;
+  --popover: #24221e;
+  --popover-foreground: #ece6da;
+  --primary: #ece6da;
+  --primary-foreground: #1a1916;
+  --secondary: #2a2722;
+  --secondary-foreground: #ece6da;
+  --muted: #2a2722;
+  --muted-foreground: #a39b8d;
+  --accent: #2a2722;
+  --accent-foreground: #ece6da;
+  --destructive: #e2654a;
+  --border: #36322b;
+  --input: #3d3830;
+  --ring: #e2654a;
+
+  --pencil: #e2654a;
+  --pencil-soft: #3a2420;
+  --approve: #7fb489;
+  --approve-soft: #22301f;
+  --inferred: #d2b25a;
+  --inferred-soft: #332b17;
+  --rule: #ece6da;
+
+  --chart-1: #e2654a;
+  --chart-2: #4a9bd1;
+  --chart-3: #b88a26;
+  --chart-4: #b07fc4;
+  --chart-5: #a39b8d;
+  --chart-grid: #2e2b25;
+
+  --sidebar: #1f1d19;
+  --sidebar-foreground: #ece6da;
+  --sidebar-primary: #ece6da;
+  --sidebar-primary-foreground: #1a1916;
+  --sidebar-accent: #2a2722;
+  --sidebar-accent-foreground: #ece6da;
+  --sidebar-border: #36322b;
+  --sidebar-ring: #e2654a;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+    font-feature-settings: "ss01", "ss02";
+  }
+  h1, h2, h3 {
+    font-family: var(--font-newsreader), Georgia, serif;
+    font-optical-sizing: auto;
+    letter-spacing: -0.015em;
+  }
+  ::selection {
+    background: var(--pencil-soft);
+  }
+}
+
+@layer components {
+  /* Small caps label used for section kickers, gates, metadata */
+  .kicker {
+    font-family: var(--font-plex-mono), ui-monospace, monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+  /* Numbers in tables and KPIs line up */
+  .num {
+    font-family: var(--font-plex-mono), ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  /* Proofreading marks for draft→final diffs */
+  .mark-del {
+    color: var(--pencil);
+    text-decoration: line-through;
+    text-decoration-thickness: 1.5px;
+    text-decoration-color: var(--pencil);
+  }
+  .mark-ins {
+    color: var(--approve);
+    background: linear-gradient(transparent 62%, var(--approve-soft) 62%);
+  }
+  /* Footnote reference in drafts */
+  .fn {
+    font-family: var(--font-plex-mono), ui-monospace, monospace;
+    font-size: 0.65em;
+    vertical-align: super;
+    color: var(--pencil);
+    padding: 0 0.1em;
+    cursor: help;
+  }
+  /* Paper grain: barely-there, so the page is not flat digital white */
+  .paper {
+    background-image: radial-gradient(color-mix(in oklch, var(--foreground) 4%, transparent) 0.5px, transparent 0.5px);
+    background-size: 3px 3px;
+  }
+}
