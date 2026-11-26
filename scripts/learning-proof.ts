@@ -9,7 +9,7 @@
 import { adminClient, log } from "./_env";
 import { generateDraft } from "@/lib/echo/draft";
 import { extractRules } from "@/lib/echo/learning";
-import { failedCount } from "@/lib/echo/checks";
+import { runChecks } from "@/lib/echo/checks";
 
 async function main() {
   const db = adminClient();
@@ -28,6 +28,8 @@ async function main() {
     .eq("status", "edited");
   if (!held?.length) throw new Error("No held-out decisions. Run npm run seed:synthetic first.");
 
+  // Whole-number tallies for the Ledger: drafts written and rule breaks per check type.
+  const tally = { without: { drafts: 0, breaks: {} as Record<string, number> }, with: { drafts: 0, breaks: {} as Record<string, number> } };
   const rows: { topic: string; pattern?: string; without: number; with: number; item_ids: Record<string, string> }[] = [];
   // LLM output varies, so each brief is drafted RUNS times per mode and averaged.
   const RUNS = Number(process.env.PROOF_RUNS ?? 3);
@@ -47,7 +49,13 @@ async function main() {
       const vs = made
         .filter((m) => m.withLearning === withLearning)
         .flatMap((m) => (drafts!.find((x) => x.id === m.id)!.payload.versions ?? []) as { clean: string }[]);
-      return vs.reduce((s, v) => s + failedCount(v.clean), 0) / Math.max(1, vs.length);
+      const t = tally[withLearning ? "with" : "without"];
+      let total = 0;
+      for (const v of vs) {
+        t.drafts++;
+        for (const c of runChecks(v.clean)) if (!c.pass) { t.breaks[c.id] = (t.breaks[c.id] ?? 0) + 1; total++; }
+      }
+      return total / Math.max(1, vs.length);
     };
     const without = fails(false);
     const withL = fails(true);
@@ -58,7 +66,12 @@ async function main() {
   }
 
   const avg = (k: "with" | "without") => +(rows.reduce((s, r) => s + r[k], 0) / rows.length).toFixed(2);
-  const result = { run_at: new Date().toISOString(), metric: "failed pre-flight checks per draft (0-5)", runs_per_brief: RUNS, avg_without: avg("without"), avg_with: avg("with"), rows };
+  const result = { run_at: new Date().toISOString(), metric: "failed pre-flight checks per draft (0-5)", runs_per_brief: RUNS, briefs: rows.length,
+    drafts: tally.without.drafts,
+    breaks_without: Object.values(tally.without.breaks).reduce((a, b) => a + b, 0),
+    breaks_with: Object.values(tally.with.breaks).reduce((a, b) => a + b, 0),
+    by_check: runChecks("").map((c) => ({ id: c.id, label: c.label, without: tally.without.breaks[c.id] ?? 0, with: tally.with.breaks[c.id] ?? 0 })),
+    avg_without: avg("without"), avg_with: avg("with"), rows };
   await db.from("settings").upsert({ key: "learning_proof", value: result });
   log(`average failed checks: without ${result.avg_without} → with ${result.avg_with}`);
 }

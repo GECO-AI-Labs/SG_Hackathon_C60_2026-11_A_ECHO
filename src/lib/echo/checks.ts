@@ -5,6 +5,15 @@
  */
 export type Check = { id: string; label: string; pass: boolean; detail?: string };
 
+/** The same checks named as mistakes, for the Ledger breakdown. */
+export const MISTAKES: Record<string, string> = {
+  opener: "Opened with a question",
+  hashtags: "More than 3 hashtags",
+  hype: "Hype words",
+  link: "No link or call to action",
+  length: "Over 150 words",
+};
+
 const HYPE = ["revolutionary", "game-changing", "game changer", "unlock", "journey", "transformative", "cutting-edge", "disrupt", "supercharge", "elevate"];
 
 export function runChecks(text: string): Check[] {

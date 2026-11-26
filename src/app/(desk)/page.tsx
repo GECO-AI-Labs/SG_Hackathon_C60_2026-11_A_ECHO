@@ -11,7 +11,7 @@ export default async function DeskPage({ searchParams }: { searchParams: Promise
   const [{ data: pending }, { data: recent }, { data: autonomy }] = await Promise.all([
     supabase
       .from("review_items")
-      .select("*")
+      .select("*, parent:parent_id(title, final, draft)")
       .eq("status", "pending")
       .eq("held_out", false)
       .order("created_at", { ascending: false })

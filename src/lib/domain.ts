@@ -66,11 +66,28 @@ export const DATA_RULES = {
     "LinkedIn gives no per-post audience data. Some engagement may come from GECO staff, so we do not treat it as external. Reach and impressions are the safer signal.",
 };
 
+/** Each gate's plain-language question and button labels, shown on the Desk. */
 export const GATES = {
-  1: { name: "Library", item: "classification", verb: "Approve classification" },
-  2: { name: "Post", item: "post_draft", verb: "Approve post" },
-  3: { name: "Objective", item: "objective_metrics", verb: "Confirm objective" },
-  4: { name: "Insight", item: "insight", verb: "Approve insight" },
+  1: {
+    name: "Library", item: "classification", verb: "Approve classification",
+    question: "Is this material filed correctly? Approving lets drafts cite it.",
+    approve: "Approve", edit: "Reclassify",
+  },
+  2: {
+    name: "Post", item: "post_draft", verb: "Approve post",
+    question: "Is this post ready for you to publish? Approving does not post it.",
+    approve: "Approve", edit: "Edit",
+  },
+  3: {
+    name: "Objective", item: "objective_metrics", verb: "Confirm objective",
+    question: "Once this post is live, which numbers should judge it?",
+    approve: "Confirm", edit: "Change objective",
+  },
+  4: {
+    name: "Insight", item: "insight", verb: "Approve insight",
+    question: "Should this finding guide the next posts? Approved insights appear on the Write page.",
+    approve: "Approve", edit: "Edit",
+  },
 } as const;
 export type Gate = keyof typeof GATES;
 export type ItemType = (typeof GATES)[Gate]["item"];

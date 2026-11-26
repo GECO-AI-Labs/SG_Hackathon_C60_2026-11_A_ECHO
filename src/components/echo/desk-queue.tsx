@@ -23,6 +23,7 @@ export type QueueItem = {
   draft: string | null; payload: Record<string, any>; citations: Citation[]; context: Record<string, any>;
   learning: { with_learning?: boolean; rule_ids?: string[]; example_ids?: string[] }; source: string; created_at: string;
   parent_id: string | null;
+  parent?: { title: string; final: string | null; draft: string | null } | null;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 type Citation = { n: number; material_id: string; title: string; kind: string; source: string; published_date: string | null; snippet: string; similarity: number; used: boolean };
@@ -197,7 +198,10 @@ function ReviewCard({ item }: { item: QueueItem }) {
         <span className="kicker">{item.reason}</span>
       </header>
 
-      <h2 className="mt-3 text-[clamp(1.6rem,3vw,2.3rem)] leading-tight font-medium">{item.title}</h2>
+      <p className="mt-2 text-sm text-foreground/80">{GATES[item.gate].question}</p>
+      <h2 className="mt-4 text-[clamp(1.6rem,3vw,2.3rem)] leading-tight font-medium">
+        {item.item_type === "objective_metrics" ? item.parent?.title ?? item.title.replace(/^Success metrics:\s*/, "") : item.title}
+      </h2>
       {item.brief && item.brief !== item.title && <p className="mt-2 text-sm text-muted-foreground">Brief: {item.brief.split("\n")[0]}</p>}
 
       {isPost && (
@@ -219,6 +223,12 @@ function ReviewCard({ item }: { item: QueueItem }) {
       )}
       {item.item_type === "classification" && <ClassificationBody item={item} mode={mode} objective={objective} setObjective={setObjective} final={final} setFinal={setFinal} />}
       {item.item_type === "objective_metrics" && <MetricsBody item={item} mode={mode} objective={objective} setObjective={setObjective} />}
+      {item.item_type === "objective_metrics" && (item.parent?.final ?? item.parent?.draft) && (
+        <details className="mt-6 max-w-3xl text-sm">
+          <summary className="kicker cursor-pointer">The approved post</summary>
+          <p className="mt-2 font-serif text-[1.02rem] leading-relaxed whitespace-pre-wrap text-foreground/80">{item.parent?.final ?? item.parent?.draft}</p>
+        </details>
+      )}
       {item.item_type === "insight" && <InsightBody item={item} mode={mode} final={final} setFinal={setFinal} />}
 
       {/* Decision bar */}
@@ -257,7 +267,7 @@ function ReviewCard({ item }: { item: QueueItem }) {
         ) : mode === "edit" ? (
           <div className="flex flex-wrap items-center gap-2">
             <Button disabled={pending} onClick={() => run({ kind: "edit", final, versionIndex: version, objective }, "Saved with your edits")}>
-              Approve with edits
+              {item.gate === 3 ? "Confirm new objective" : item.gate === 1 ? "Save classification" : "Approve with edits"}
             </Button>
             <Button variant="ghost" onClick={() => { setMode("view"); setFinal(baseText); }}>
               Discard edits
@@ -266,11 +276,11 @@ function ReviewCard({ item }: { item: QueueItem }) {
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <Button disabled={pending} onClick={() => run({ kind: "approve", versionIndex: version }, "Approved")}>
-              Approve <Kbd>A</Kbd>
+            <Button disabled={pending} onClick={() => run({ kind: "approve", versionIndex: version }, item.gate === 3 ? "Confirmed" : "Approved")}>
+              {GATES[item.gate].approve} <Kbd>A</Kbd>
             </Button>
             <Button variant="outline" disabled={pending} onClick={() => setMode("edit")}>
-              Edit <Kbd>E</Kbd>
+              {GATES[item.gate].edit} <Kbd>E</Kbd>
             </Button>
             <Button variant="outline" disabled={pending} onClick={() => setMode("reject")} className="text-pencil">
               Reject <Kbd>R</Kbd>
@@ -408,13 +418,19 @@ function MetricsBody({ item, mode, objective, setObjective }: { item: QueueItem;
   const supporting = mode === "edit" ? OBJECTIVES[o].supporting : p.supporting;
   return (
     <div className="mt-6 max-w-3xl space-y-6">
-      <div className="flex items-center gap-3">
-        {mode === "edit" ? <ObjectivePicker value={o} onChange={setObjective} /> : <ObjectiveTag objective={p.objective} status={p.objective_status} />}
-        <span className="text-sm text-muted-foreground">{OBJECTIVES[o].purpose}</span>
+      <div>
+        <p className="kicker">The post&apos;s goal</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          {mode === "edit" ? <ObjectivePicker value={o} onChange={setObjective} /> : <ObjectiveTag objective={p.objective} status={p.objective_status} />}
+          <span className="text-sm text-muted-foreground">{OBJECTIVES[o].purpose}</span>
+        </div>
+        {p.objective_status !== "confirmed" && mode !== "edit" && (
+          <p className="mt-2 text-xs text-muted-foreground">ECHO guessed this goal from the brief. Confirm it, or change it if the post is meant to do something else.</p>
+        )}
       </div>
       <div className="grid gap-6 sm:grid-cols-2">
-        <MetricList title="Primary metric" keys={primary} />
-        <MetricList title="Supporting" keys={supporting} />
+        <MetricList title="Judge it mainly by" keys={primary} />
+        <MetricList title="Also watch" keys={supporting} />
       </div>
       <p className="border-l-2 border-pencil pl-4 font-serif text-[1.05rem] italic">{p.why}</p>
     </div>
