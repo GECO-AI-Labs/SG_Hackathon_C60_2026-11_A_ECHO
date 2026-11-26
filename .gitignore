@@ -61,3 +61,4 @@ ECHO-journey-*
 # Supabase local dev
 supabase/.branches
 supabase/.temp
+scripts/.tmp/

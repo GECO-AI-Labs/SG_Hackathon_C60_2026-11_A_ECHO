@@ -161,7 +161,7 @@ function AddMaterial() {
       <SheetContent className="w-full overflow-y-auto sm:max-w-lg">
         <SheetHeader>
           <SheetTitle className="font-serif text-2xl font-medium">Add to the library</SheetTitle>
-          <SheetDescription>Upload a PDF, Word file or text, or paste text. ECHO extracts it, makes it searchable and suggests tags. You approve them at Gate 1.</SheetDescription>
+          <SheetDescription>Upload a PDF, Word, PowerPoint or text file, or paste text. ECHO extracts it, makes it searchable and suggests tags. You approve them at Gate 1.</SheetDescription>
         </SheetHeader>
         <form
           ref={formRef}
@@ -195,7 +195,7 @@ function AddMaterial() {
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="file">File</Label>
-            <Input id="file" name="file" type="file" accept=".pdf,.docx,.txt,.md" className={cn("cursor-pointer")} />
+            <Input id="file" name="file" type="file" accept=".pdf,.docx,.pptx,.txt,.md" className={cn("cursor-pointer")} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="body">…or paste text</Label>

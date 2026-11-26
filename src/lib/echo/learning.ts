@@ -38,11 +38,23 @@ export async function beforeAfterExamples(db: SupabaseClient, topic?: string, n 
     .order("decided_at", { ascending: false })
     .limit(40);
   const rows = (data ?? []) as {
-    id: string; draft: string; final: string; context: { topic?: string; impressions?: number }; edit_ratio: number;
+    id: string; draft: string; final: string; context: { topic?: string }; edit_ratio: number; post_id: string | null;
   }[];
+  // Results-weighted: drafts that were published (linked on import) carry their post's impressions,
+  // compared with the page's typical post. A well-performing edit is a better example.
+  const linked = rows.map((r) => r.post_id).filter(Boolean) as string[];
+  const perf = new Map<string, number>();
+  let typical = 1;
+  if (linked.length) {
+    const { data: p } = await db.from("post_performance").select("post_id, impressions").in("post_id", linked);
+    (p ?? []).forEach((x) => perf.set(x.post_id, x.impressions ?? 0));
+    const { data: all } = await db.from("post_performance").select("impressions").eq("comparable", true).gte("published_date", "2025-01-01");
+    const s = (all ?? []).map((x) => x.impressions ?? 0).sort((a, b) => a - b);
+    typical = Math.max(1, s[Math.floor(s.length / 2)] ?? 1);
+  }
   const score = (r: (typeof rows)[number]) =>
     (topic && r.context?.topic?.toLowerCase() === topic.toLowerCase() ? 2 : 0) +
-    Math.min(1, (r.context?.impressions ?? 0) / 1000) + // results-weighted
+    (r.post_id && perf.has(r.post_id) ? Math.min(1.5, perf.get(r.post_id)! / typical) : 0) + // results-weighted
     Math.min(0.5, r.edit_ratio ?? 0); // bigger edits teach more
   return rows
     .sort((a, b) => score(b) - score(a))
@@ -68,10 +80,17 @@ export async function extractRules(db: SupabaseClient, itemType: ItemType = "pos
 
   const { data: existing } = await db.from("rules").select("rule").eq("item_type", itemType);
 
+  const SUBJECT: Record<ItemType, string> = {
+    post_draft: "AI-written LinkedIn drafts",
+    classification: 'AI-suggested labels for library material (written as "topic · objective")',
+    objective_metrics: "AI-suggested objectives and success metrics for posts",
+    insight: "AI-written performance insights",
+  };
+  const words = (s: string | null) => (s ?? "").trim().split(/\s+/).filter(Boolean).length;
   const log = decisions
     .map((d, i) =>
       d.status === "edited"
-        ? `#${i} EDITED\nDRAFT: ${d.draft}\nFINAL: ${d.final}`
+        ? `#${i} EDITED (words ${words(d.draft)} → ${words(d.final)})\nDRAFT: ${d.draft}\nFINAL: ${d.final}`
         : `#${i} REJECTED reason=${d.decision_reason} note=${d.decision_note ?? ""}\nDRAFT: ${d.draft}`,
     )
     .join("\n\n---\n\n");
@@ -80,11 +99,12 @@ export async function extractRules(db: SupabaseClient, itemType: ItemType = "pos
     {
       role: "system",
       content:
-        "You study how a marketing manager corrects AI-written LinkedIn drafts and turn REPEATED corrections into house rules. " +
+        `You study how a marketing manager corrects ${SUBJECT[itemType]} and turn REPEATED corrections into house rules. ` +
         "Only propose a rule if at least 2 decisions support it. Look at structural edits as well as wording: " +
-        "length (count words in DRAFT vs FINAL), the opening line, the ending, hashtags, links, claims and tone. " +
-        "Each rule is one short imperative sentence a writer can follow, with a number where the reviewer was consistent " +
-        '(e.g. "Do not open with a question."). Never duplicate an existing rule. ' +
+        "length (count words in DRAFT vs FINAL), the opening line, the ending, hashtags, links, claims, tone and labels. " +
+        'Each rule is one short imperative sentence (e.g. "Do not open with a question."). ' +
+        "When the reviewer was consistent about a quantity, use the reviewer's FINAL numbers (e.g. the longest final word count), not the draft's. " +
+        "Never duplicate an existing rule. " +
         'Return JSON: {"rules":[{"rule":"…","rationale":"what the reviewer kept doing, in one sentence","evidence":[decision numbers, e.g. 3, 7]}]}. ' +
         'Return {"rules":[]} if nothing repeats.',
     },

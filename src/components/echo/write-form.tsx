@@ -22,7 +22,8 @@ const STARTERS = [
 
 export function WriteForm({ recommendations, initialRec, initialBrief }: { recommendations: Rec[]; initialRec?: string; initialBrief?: string }) {
   const router = useRouter();
-  const [brief, setBrief] = useState(initialBrief ?? "");
+  const fromRec = recommendations.find((r) => r.id === initialRec);
+  const [brief, setBrief] = useState(initialBrief ?? (fromRec ? `Write a post that applies this recommendation: ${fromRec.text}` : ""));
   const [objective, setObjective] = useState<string>("infer");
   const [format, setFormat] = useState<string>("image");
   const [rec, setRec] = useState<string>(initialRec ?? "none");

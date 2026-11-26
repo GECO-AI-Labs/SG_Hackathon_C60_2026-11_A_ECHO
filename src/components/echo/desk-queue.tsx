@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { decide, decideMany } from "@/app/actions";
+import { decide, decideMany, refineAction } from "@/app/actions";
 import type { RecentRow } from "@/app/(desk)/page";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GATES, METRICS, OBJECTIVES, OBJECTIVE_KEYS, REJECT_REASONS, type Gate, type Objective, type RejectReason } from "@/lib/domain";
+import { AUTONOMY, GATES, METRICS, OBJECTIVES, OBJECTIVE_KEYS, REJECT_REASONS, type Gate, type Objective, type RejectReason } from "@/lib/domain";
 import { runChecks } from "@/lib/echo/checks";
 import { cn } from "@/lib/utils";
 import { Footnoted, ProofMarks } from "./text-marks";
@@ -24,13 +24,17 @@ export type QueueItem = {
   learning: { with_learning?: boolean; rule_ids?: string[]; example_ids?: string[] }; source: string; created_at: string;
   parent_id: string | null;
   parent?: { title: string; final: string | null; draft: string | null } | null;
+  material?: { body: string; kind: string } | null;
 };
 /* eslint-enable @typescript-eslint/no-explicit-any */
 type Citation = { n: number; material_id: string; title: string; kind: string; source: string; published_date: string | null; snippet: string; similarity: number; used: boolean };
 
 const FILTERS = [{ key: 0, label: "All" }, ...([1, 2, 3, 4] as Gate[]).map((g) => ({ key: g, label: `G${g} ${GATES[g].name}` }))];
 
-export function DeskQueue({ items, recent, initialId, batchTypes }: { items: QueueItem[]; recent: RecentRow[]; initialId?: string; batchTypes: string[] }) {
+export function DeskQueue({ items, recent, initialId, batchTypes, topics, classificationProgress }: {
+  items: QueueItem[]; recent: RecentRow[]; initialId?: string; batchTypes: string[]; topics: string[];
+  classificationProgress: { decided: number; unedited: number };
+}) {
   const [filter, setFilter] = useState<number>(0);
   const visible = useMemo(() => items.filter((i) => !filter || i.gate === filter), [items, filter]);
   const [selectedId, setSelectedId] = useState<string | undefined>(initialId ?? visible[0]?.id);
@@ -41,8 +45,12 @@ export function DeskQueue({ items, recent, initialId, batchTypes }: { items: Que
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement)?.closest("input, textarea, [role=combobox], [contenteditable]")) return;
       const idx = visible.findIndex((i) => i.id === selected?.id);
-      if (e.key === "j" && idx < visible.length - 1) setSelectedId(visible[idx + 1].id);
-      if (e.key === "k" && idx > 0) setSelectedId(visible[idx - 1].id);
+      const go = (id: string) => {
+        setSelectedId(id);
+        document.querySelector(`[data-item="${id}"]`)?.scrollIntoView({ block: "nearest" });
+      };
+      if (e.key === "j" && idx < visible.length - 1) go(visible[idx + 1].id);
+      if (e.key === "k" && idx > 0) go(visible[idx - 1].id);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -56,7 +64,8 @@ export function DeskQueue({ items, recent, initialId, batchTypes }: { items: Que
 
   return (
     <div className="grid gap-8 lg:grid-cols-[22rem_1fr]">
-      <aside className="lg:sticky lg:top-6 lg:self-start">
+      {/* The queue scrolls on its own, so a long queue never stretches the page. */}
+      <aside className="lg:sticky lg:top-6 lg:flex lg:max-h-[calc(100dvh-3rem)] lg:flex-col lg:self-start">
         <div className="flex items-baseline justify-between">
           <h1 className="text-3xl font-medium">The Desk</h1>
           <span className="kicker">j / k to move</span>
@@ -80,14 +89,17 @@ export function DeskQueue({ items, recent, initialId, batchTypes }: { items: Que
           ))}
         </div>
 
+        {!batchTypes.includes("classification") && items.some((i) => i.item_type === "classification") && (
+          <LadderHint {...classificationProgress} />
+        )}
         {batchTypes.map((t) => {
           const ids = items.filter((i) => i.item_type === t).map((i) => i.id);
           return ids.length > 1 ? <BatchApprove key={t} itemType={t} ids={ids} /> : null;
         })}
 
-        <ol className="mt-5 divide-y divide-border border-b border-border">
+        <ol className="mt-5 max-h-[60dvh] divide-y divide-border overflow-y-auto overscroll-contain border-y border-border lg:max-h-none lg:min-h-0 lg:flex-1">
           {visible.map((i) => (
-            <li key={i.id}>
+            <li key={i.id} data-item={i.id}>
               <button
                 onClick={() => setSelectedId(i.id)}
                 className={cn(
@@ -107,7 +119,7 @@ export function DeskQueue({ items, recent, initialId, batchTypes }: { items: Que
           ))}
         </ol>
 
-        {recent.length > 0 && (
+        {recent.length > 0 && visible.length < 6 && (
           <div className="mt-8">
             <p className="kicker">Recently decided</p>
             <ul className="mt-2 space-y-1.5 text-xs">
@@ -126,14 +138,14 @@ export function DeskQueue({ items, recent, initialId, batchTypes }: { items: Que
         )}
       </aside>
 
-      <section className="min-w-0">{selected ? <ReviewCard key={selected.id} item={selected} /> : <EmptyDesk />}</section>
+      <section className="min-w-0">{selected ? <ReviewCard key={selected.id} item={selected} topics={topics} /> : <EmptyDesk />}</section>
     </div>
   );
 }
 
 /* ───────────────────────── Review card ───────────────────────── */
 
-function ReviewCard({ item }: { item: QueueItem }) {
+function ReviewCard({ item, topics }: { item: QueueItem; topics: string[] }) {
   const router = useRouter();
   const [openedAt] = useState(() => Date.now()); // for 'time to decide'
   const [mode, setMode] = useState<"view" | "edit" | "reject">("view");
@@ -147,6 +159,22 @@ function ReviewCard({ item }: { item: QueueItem }) {
   const [note, setNote] = useState("");
   const [hoverFn, setHoverFn] = useState<number | null>(null);
 
+  const [refining, startRefine] = useTransition();
+  const refine = (instruction: string) =>
+    startRefine(async () => {
+      try {
+        const idx = await refineAction(item.id, version, instruction);
+        setVersion(idx);
+        router.refresh();
+        toast.success(`Version ${idx + 1} added`, { description: instruction });
+      } catch (e) {
+        toast.error((e as Error).message);
+      }
+    });
+  const startEdit = () => {
+    setFinal(baseText);
+    setMode("edit");
+  };
   const selectVersion = (i: number) => {
     setVersion(i);
     setFinal(versions[i]?.clean ?? "");
@@ -162,8 +190,10 @@ function ReviewCard({ item }: { item: QueueItem }) {
           action:
             item.item_type === "post_draft" && approvedText
               ? { label: "Copy post", onClick: () => navigator.clipboard.writeText(approvedText).then(() => toast("Copied. Paste it into LinkedIn.")) }
-              : undefined,
-          duration: item.item_type === "post_draft" ? 10000 : 4000,
+              : item.item_type === "insight" && (d.kind === "approve" || d.kind === "edit")
+                ? { label: "Write a post from it", onClick: () => router.push(`/write?rec=${item.id}`) }
+                : undefined,
+          duration: item.item_type === "post_draft" || item.item_type === "insight" ? 10000 : 4000,
         });
         router.refresh();
       } catch (e) {
@@ -176,7 +206,7 @@ function ReviewCard({ item }: { item: QueueItem }) {
     const onKey = (e: KeyboardEvent) => {
       if (mode !== "view" || pending || (e.target as HTMLElement)?.closest("input, textarea, [role=combobox]")) return;
       if (e.key === "a") run({ kind: "approve", versionIndex: version }, "Approved");
-      if (e.key === "e") setMode("edit");
+      if (e.key === "e") startEdit();
       if (e.key === "r") setMode("reject");
     };
     window.addEventListener("keydown", onKey);
@@ -219,9 +249,11 @@ function ReviewCard({ item }: { item: QueueItem }) {
           objective={objective}
           setObjective={setObjective}
           checks={checks}
+          onRefine={refine}
+          refining={refining}
         />
       )}
-      {item.item_type === "classification" && <ClassificationBody item={item} mode={mode} objective={objective} setObjective={setObjective} final={final} setFinal={setFinal} />}
+      {item.item_type === "classification" && <ClassificationBody item={item} mode={mode} objective={objective} setObjective={setObjective} final={final} setFinal={setFinal} topics={topics} />}
       {item.item_type === "objective_metrics" && <MetricsBody item={item} mode={mode} objective={objective} setObjective={setObjective} />}
       {item.item_type === "objective_metrics" && (item.parent?.final ?? item.parent?.draft) && (
         <details className="mt-6 max-w-3xl text-sm">
@@ -279,7 +311,7 @@ function ReviewCard({ item }: { item: QueueItem }) {
             <Button disabled={pending} onClick={() => run({ kind: "approve", versionIndex: version }, item.gate === 3 ? "Confirmed" : "Approved")}>
               {GATES[item.gate].approve} <Kbd>A</Kbd>
             </Button>
-            <Button variant="outline" disabled={pending} onClick={() => setMode("edit")}>
+            <Button variant="outline" disabled={pending} onClick={startEdit}>
               {GATES[item.gate].edit} <Kbd>E</Kbd>
             </Button>
             <Button variant="outline" disabled={pending} onClick={() => setMode("reject")} className="text-pencil">
@@ -302,6 +334,7 @@ function PostBody(p: {
   item: QueueItem; versions: { angle: string; marked: string; clean: string }[]; version: number; setVersion: (n: number) => void;
   mode: string; final: string; setFinal: (s: string) => void; baseText: string; hoverFn: number | null; setHoverFn: (n: number | null) => void;
   objective?: Objective; setObjective: (o: Objective) => void; checks: ReturnType<typeof runChecks>;
+  onRefine: (instruction: string) => void; refining: boolean;
 }) {
   const { item, versions, version } = p;
   const cites = (item.citations ?? []).filter((c) => c.used);
@@ -323,7 +356,7 @@ function PostBody(p: {
         )}
 
         {versions.length > 1 && (
-          <div className="mt-5 flex flex-wrap gap-0 border-b border-border">
+          <div className="mt-5 flex flex-wrap gap-x-1 border-b border-border">
             {versions.map((v, i) => (
               <button
                 key={i}
@@ -331,7 +364,7 @@ function PostBody(p: {
                 onClick={() => p.setVersion(i)}
                 className={cn("-mb-px border-b-2 px-3 py-2 text-left text-sm", version === i ? "border-pencil text-foreground" : "border-transparent text-muted-foreground hover:text-foreground")}
               >
-                <span className="kicker block">Version {i + 1}</span>
+                <span className="kicker block">{"refined_from" in v ? `Version ${i + 1} · refined` : `Version ${i + 1}`}</span>
                 <span className="line-clamp-1 max-w-56">{v.angle}</span>
               </button>
             ))}
@@ -361,6 +394,7 @@ function PostBody(p: {
             </li>
           ))}
         </ul>
+        {p.mode !== "edit" && <RefineBar onRefine={p.onRefine} refining={p.refining} />}
         <p className="mt-3 text-xs text-muted-foreground">
           {learning.with_learning === false
             ? "Drafted without learning (baseline)."
@@ -393,14 +427,28 @@ function PostBody(p: {
   );
 }
 
-function ClassificationBody({ item, mode, objective, setObjective, final, setFinal }: { item: QueueItem; mode: string; objective?: Objective; setObjective: (o: Objective) => void; final: string; setFinal: (s: string) => void }) {
+function ClassificationBody({ item, mode, objective, setObjective, final, setFinal, topics }: { item: QueueItem; mode: string; objective?: Objective; setObjective: (o: Objective) => void; final: string; setFinal: (s: string) => void; topics: string[] }) {
   const p = item.payload as { topic: string; tags: string[]; objective: Objective; why: string };
   return (
     <div className="mt-6 max-w-2xl space-y-5">
-      <p className="text-sm text-muted-foreground">ECHO read this material and suggests how to file it. Approving adds it to the library that drafts draw from.</p>
+      {item.material?.body && (
+        <blockquote className="max-h-56 overflow-y-auto border-l-2 border-border pl-4 font-serif text-[1.02rem] leading-relaxed whitespace-pre-wrap text-foreground/85">
+          {item.material.body.slice(0, 1200)}{item.material.body.length > 1200 && "…"}
+        </blockquote>
+      )}
+      <p className="text-sm text-muted-foreground">ECHO suggests how to file it. Approving confirms the topic and goal, and lets drafts cite it.</p>
       <dl className="grid grid-cols-[8rem_1fr] gap-y-3 border-y border-border py-4 text-sm">
         <dt className="kicker pt-0.5">Topic</dt>
-        <dd>{mode === "edit" ? <Input value={final.split(" · ")[0]} onChange={(e) => setFinal(`${e.target.value} · ${objective}`)} className="h-8 bg-card" /> : p.topic}</dd>
+        <dd>
+          {mode !== "edit" ? p.topic : topics.length ? (
+            <Select value={final.split(" · ")[0]} onValueChange={(t) => setFinal(`${t} · ${objective}`)}>
+              <SelectTrigger className="h-8 w-56 bg-card text-xs"><SelectValue /></SelectTrigger>
+              <SelectContent>{[...topics, "Other"].map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+            </Select>
+          ) : (
+            <Input value={final.split(" · ")[0]} onChange={(e) => setFinal(`${e.target.value} · ${objective}`)} className="h-8 bg-card" />
+          )}
+        </dd>
         <dt className="kicker pt-0.5">Tags</dt>
         <dd className="flex flex-wrap gap-1.5">{p.tags?.map((t) => <span key={t} className="num rounded-sm bg-muted px-1.5 py-0.5 text-[0.7rem]">{t}</span>)}</dd>
         <dt className="kicker pt-0.5">Objective</dt>
@@ -517,10 +565,58 @@ function BatchApprove({ itemType, ids }: { itemType: string; ids: string[] }) {
         size="sm"
         className="mt-2"
         disabled={pending}
-        onClick={() => start(async () => { await decideMany(ids); toast.success(`Approved ${ids.length} items`); router.refresh(); })}
+        onClick={() => start(async () => { const n = await decideMany(ids); toast.success(`Approved ${n} items in one go`, { description: "Each one is still logged with your name." }); router.refresh(); })}
       >
         Approve {ids.length} {itemType} items
       </Button>
+    </div>
+  );
+}
+
+/** Conversational refinement: one-tap instructions or your own words. Each creates a new version. */
+function RefineBar({ onRefine, refining }: { onRefine: (s: string) => void; refining: boolean }) {
+  const [text, setText] = useState("");
+  const QUICK = ["Shorter", "Warmer", "More concrete", "Add a call to action", "Different angle"];
+  return (
+    <div className="mt-5 rounded-sm border border-dashed border-border px-4 py-3">
+      <p className="kicker">Ask for changes</p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1.5">
+        {QUICK.map((q) => (
+          <button key={q} disabled={refining} onClick={() => onRefine(q)} className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline disabled:opacity-40">
+            {q}
+          </button>
+        ))}
+      </div>
+      <form
+        className="mt-3 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (text.trim()) { onRefine(text); setText(""); }
+        }}
+      >
+        <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="e.g. Mention the mentor programme, drop the second paragraph" className="h-9 bg-card" disabled={refining} />
+        <Button type="submit" variant="outline" className="h-9" disabled={refining || !text.trim()}>
+          {refining ? "Rewriting…" : "Refine"}
+        </Button>
+      </form>
+    </div>
+  );
+}
+
+/** Shows how close classification is to earning batch approval (autonomy Level 1). */
+function LadderHint({ decided, unedited }: { decided: number; unedited: number }) {
+  const need = AUTONOMY.level1MinItems;
+  const rate = decided ? unedited / decided : 0;
+  const ok = decided >= need && rate >= AUTONOMY.level1MinUneditedRate;
+  return (
+    <div className="mt-4 text-xs text-muted-foreground">
+      <p>
+        <span className="font-medium text-foreground">Batch approval for classifications:</span>{" "}
+        {ok ? "earned. Switch it on in the Ledger." : `${Math.min(decided, need)}/${need} decided, ${Math.round(rate * 100)}% unedited (needs ${Math.round(AUTONOMY.level1MinUneditedRate * 100)}%).`}
+      </p>
+      <div className="mt-1.5 h-[3px] bg-muted">
+        <div className="h-full bg-approve transition-all" style={{ width: `${Math.min(100, (decided / need) * 100)}%` }} />
+      </div>
     </div>
   );
 }

@@ -29,7 +29,7 @@ const TYPE_LABEL: Record<string, string> = { classification: "Classification (G1
 export function LedgerView({ types, rules, proof, trend, events }: { types: TypeRow[]; rules: RuleRow[]; proof: Proof; trend: { week: string; approval: number; edit: number; n: number }[]; events: Event[] }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const postRules = rules.filter((r) => r.item_type === "post_draft");
+  const postRules = [...rules].sort((a, b) => (a.item_type === b.item_type ? 0 : a.item_type === "post_draft" ? -1 : 1));
 
   return (
     <div className="space-y-14">
@@ -84,7 +84,7 @@ export function LedgerView({ types, rules, proof, trend, events }: { types: Type
                 <p className={cn("font-serif text-[1.15rem] leading-snug", !r.active && "line-through")}>{r.rule}</p>
                 {r.rationale && <p className="mt-1 text-xs text-muted-foreground">{r.rationale}</p>}
                 <p className="num mt-1 text-[0.65rem] text-muted-foreground uppercase">
-                  learned from {r.evidence_ids.length} decision{r.evidence_ids.length === 1 ? "" : "s"} · {r.origin}
+                  {r.item_type === "post_draft" ? "post drafts" : TYPE_LABEL[r.item_type]} · learned from {r.evidence_ids.length} decision{r.evidence_ids.length === 1 ? "" : "s"} · {r.origin}
                 </p>
               </div>
               <Switch

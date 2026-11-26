@@ -131,3 +131,48 @@ export async function generateDraft(db: SupabaseClient, input: DraftInput) {
   if (error) throw error;
   return data.id as string;
 }
+
+/**
+ * Conversational refinement: rewrite one version following the reviewer's instruction
+ * ("shorter", "warmer", "new angle"…). Uses the SAME sources and active rules, keeps [n]
+ * citations, and adds the result as a new version on the same Gate 2 item.
+ */
+export async function refineDraft(db: SupabaseClient, itemId: string, versionIndex: number, instruction: string, actor?: string) {
+  const { data: item, error } = await db.from("review_items").select("*").eq("id", itemId).single();
+  if (error || !item) throw new Error("Draft not found");
+  if (item.status !== "pending" || item.item_type !== "post_draft") throw new Error("Only drafts waiting on the Desk can be refined.");
+
+  const versions = (item.payload?.versions ?? []) as { angle: string; marked: string; clean: string }[];
+  const base = versions[versionIndex] ?? versions[0];
+  const cites = (item.citations ?? []) as { n: number; title: string; snippet: string }[];
+  const rules = item.learning?.with_learning === false ? [] : await activeRules(db, "post_draft");
+
+  const out = await chatJSON<{ text: string; angle: string }>(
+    [
+      {
+        role: "system",
+        content: [
+          "You revise a LinkedIn post draft exactly as the reviewer asks. Change only what the instruction needs.",
+          "Keep the [n] source markers on sentences that still use a source. Never add facts that are not in the SOURCES.",
+          learningBlock(rules, []),
+          'Return JSON {"text":"revised post with [n] markers","angle":"3-6 words describing this version"}',
+        ].filter(Boolean).join("\n\n"),
+      },
+      {
+        role: "user",
+        content: `INSTRUCTION: ${instruction}\n\nDRAFT:\n${base.marked}\n\nSOURCES:\n${cites.map((c) => `[${c.n}] ${c.title}: ${c.snippet}`).join("\n")}`,
+      },
+    ],
+    { tier: "fast", maxTokens: 2000, temperature: 0.6 },
+  );
+  if (!out.text?.trim()) throw new Error("The model returned an empty revision. Try again.");
+
+  const next = { angle: clip(out.angle || instruction, 60), marked: out.text, clean: stripCitations(out.text), refined_from: versionIndex, instruction };
+  const refinements = [...((item.payload?.refinements ?? []) as unknown[]), { instruction, from: versionIndex, to: versions.length, by: actor ?? null, at: new Date().toISOString() }];
+  const { error: e2 } = await db
+    .from("review_items")
+    .update({ payload: { ...item.payload, versions: [...versions, next], refinements } })
+    .eq("id", itemId);
+  if (e2) throw e2;
+  return versions.length; // index of the new version
+}

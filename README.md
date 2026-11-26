@@ -10,10 +10,10 @@ Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Cont
 
 | Screen | What you do there | Gate |
 |---|---|---|
-| **Desk** | Review everything the AI prepared: approve, edit or reject. Keys: `j`/`k` move, `a` approve, `e` edit, `r` reject | 1–4 |
-| **Write** | Brief a new post. ECHO searches the library and writes 2 versions with numbered sources | 2 |
-| **Library** | Search past posts and documents by meaning. Upload PDFs, Word files or text | 1 |
-| **Signals** | Performance dashboard, upload a new LinkedIn report, ask ECHO a question | 3, 4 |
+| **Desk** | Review everything the AI prepared: approve, edit, reject or refine a draft ("shorter", "warmer"). Keys: `j`/`k` move, `a` approve, `e` edit, `r` reject. Batch approval appears once a task type earns Level 1 | 1–4 |
+| **Write** | Brief a new post, or start from an approved insight. ECHO searches the library and writes 2 versions with numbered sources | 2 |
+| **Library** | Search past posts and documents by meaning. Upload PDF, Word, PowerPoint or text | 1 |
+| **Signals** | Did posts hit their goal, comparisons by format and topic, trends, LinkedIn report upload, Ask ECHO | 3, 4 |
 | **Ledger** | What ECHO learned (rules you can switch off), trust per task, proof it improves, audit trail | – |
 
 **The loop in one line:** upload material → ECHO tags it (G1) → ask for insights (G4) → brief a post from an insight → ECHO drafts with sources (G2) → confirm the success metrics (G3) → your edits become rules → the next draft is better.
@@ -22,14 +22,16 @@ Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Cont
 
 | Live (real AI, real data) | Synthetic (labelled in the app) | Not built yet |
 |---|---|---|
-| Library search over 618 real posts | 3 reference documents (brochure, campaign brief, founder talk) | Conversational refinement ("make it shorter") |
-| Drafting with citations, 2 versions | 36 past reviewer decisions that seed learning | Results-weighted examples from published posts |
-| All 4 gates with audit trail | | Confidence score per draft |
-| Rule extraction from edits | | Level 2 auto-run |
-| Dashboard on real Upskill Today data | | |
-| Insights that separate trend from explanation | | |
-| CSV upload + make.com webhook | | |
-| Learning proof: 1.3 → 0.3 failed checks per draft | | |
+| Library search over 618 real posts; upload PDF, Word, PowerPoint, text | 3 reference documents (brochure, campaign brief, founder talk) | Confidence score per draft |
+| All 618 posts classified into 9 topics with inferred objectives (Gate 1) | 36 past reviewer decisions that seed learning | Level 2 auto-run |
+| Drafting with citations, 2 versions, conversational refinement | | make.com scenario + dummy LinkedIn page (teammate) |
+| All 4 gates with audit trail; batch approval once Level 1 is earned | | Separate data per LinkedIn page |
+| Results against objectives: did each post hit its goal? | | |
+| Dashboard by format and topic, calendar-month KPIs | | |
+| Ask ECHO: direct answers, trend kept apart from explanation | | |
+| LinkedIn XLSX/CSV upload as reporting periods, make.com webhook | | |
+| Rule extraction (posts and classifications), results-weighted examples | | |
+| Learning proof: house-rule mistakes drop by about 70% after learning | | |
 
 ---
 
@@ -57,7 +59,8 @@ You need: **Node.js 22+** ([download](https://nodejs.org)), **Git**, and either 
    ```bash
    npm run load:data -- --embed   # real data from data/clean (ask the team lead for this folder)
    npm run seed:synthetic         # fake reviewer history + sample documents
-   npm run proof                  # learns rules and runs the before/after test (~3 min)
+   npm run classify               # tags every post with a topic and objective (~3 min)
+   npm run proof                  # learns rules and runs the before/after test (~4 min)
    ```
 
    No `data/clean` folder? Run only `seed:synthetic`. The app works, with an empty dashboard.
@@ -102,6 +105,7 @@ Browser ── Next.js app (screens + server actions) ── Supabase (Postgres 
 4. Pre-flight checks (plain code, not AI) show on each draft: statement opener, max 3 hashtags, no hype words, has a link, under 150 words.
 5. **Proof:** 5 seeded decisions are held back. `npm run proof` drafts them with and without learning and counts failed checks.
 6. **Autonomy ladder:** each task type earns Level 1 (batch approve) at 90% unedited approvals over 20+ items. Post drafts never go above Level 1.
+7. **Results-weighted examples:** when a new report arrives, approved drafts are matched to the posts actually published. Edits on posts that performed well count more as examples.
 
 **Metrics:** engagement rate = (clicks + reactions + comments + reposts) ÷ impressions. CTR = clicks ÷ impressions. All definitions are on the Signals page and in `src/lib/domain.ts`.
 
@@ -145,7 +149,8 @@ data/clean, data/raw   real data (NOT in git, ask the team lead)
 | Add a table or column | New file in `supabase/migrations/`, then `npm run db:reset` (local) or `npm run db:push` (cloud) |
 | Wipe and refill my local database | `npm run db:reset`, then step 4 above |
 | Re-run the learning proof | `npm run proof` |
-| Import a new LinkedIn report | Signals → "Upload performance CSV" (same columns as `posts.csv`) |
+| Classify posts by topic and objective | `npm run classify` (add `-- --retopic` for a fresh topic list) |
+| Import a new LinkedIn report | Signals → "Upload LinkedIn report": LinkedIn's own XLSX export or a CSV. You see a match report before anything is saved |
 
 ### make.com
 

@@ -29,7 +29,7 @@ export default function LoginPage() {
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="email">Email</Label>
-            <Input id="email" name="email" type="email" autoComplete="email" required className="h-10 bg-card" />
+            <Input id="email" name="email" type="email" autoComplete="email" required defaultValue={state?.email} key={state?.email} className="h-10 bg-card" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="password">Password</Label>

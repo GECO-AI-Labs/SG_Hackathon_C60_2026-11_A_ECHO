@@ -18,7 +18,8 @@ export async function signIn(_: unknown, form: FormData) {
     email: String(form.get("email")),
     password: String(form.get("password")),
   });
-  if (error) return { error: "That email and password don't match." };
+  // Return the email so the form can keep it (React resets forms after an action).
+  if (error) return { error: "That email and password don't match.", email: String(form.get("email") ?? "") };
   redirect("/");
 }
 
@@ -132,10 +133,12 @@ export async function decide(itemId: string, decision: Decision, openedAt: numbe
   // Side effects per gate, applied only after a person approved.
   const approved = patch.status === "approved" || patch.status === "edited";
   if (approved && item.item_type === "classification" && item.material_id) {
-    await supabase
-      .from("materials")
-      .update({ library_status: "approved", objective_status: "confirmed", objective: decision.kind === "edit" && decision.objective ? decision.objective : item.payload?.objective })
-      .eq("id", item.material_id);
+    // final is "topic · objective"; an edit may have changed either.
+    const [topic] = String(patch.final ?? item.draft ?? "").split(" · ");
+    const objective = (decision.kind === "edit" && decision.objective) || item.payload?.objective;
+    const labels = { topic: topic || item.payload?.topic, objective, objective_status: "confirmed" };
+    await supabase.from("materials").update({ ...labels, library_status: "approved" }).eq("id", item.material_id);
+    if (item.post_id) await supabase.from("posts").update(labels).eq("post_id", item.post_id);
   }
   if (approved && item.item_type === "post_draft") {
     // Gate 2 passed → ask the manager to confirm objective + success metrics (Gate 3).
@@ -175,9 +178,11 @@ export async function decide(itemId: string, decision: Decision, openedAt: numbe
 
 export async function extractRulesAction() {
   const { supabase, user } = await requireUser();
-  const res = await extractRules(supabase, "post_draft", user.id);
+  // Learn from post edits and from classification corrections.
+  const a = await extractRules(supabase, "post_draft", user.id);
+  const b = await extractRules(supabase, "classification", user.id);
   revalidatePath("/ledger");
-  return res;
+  return { added: a.added + b.added };
 }
 
 export async function toggleRule(id: string, active: boolean) {
@@ -206,18 +211,47 @@ export async function insightsAction(question?: string) {
 
 /** Level 1 autonomy: approve several low-risk items in one tap. Each still gets its own audit row. */
 export async function decideMany(ids: string[]) {
-  const { supabase } = await requireUser();
-  const { data: rows } = await supabase.from("review_items").select("id, item_type").in("id", ids).eq("status", "pending");
+  const { supabase, user } = await requireUser();
   const { data: auto } = await supabase.from("autonomy").select("item_type, level");
-  const allowed = new Set((auto ?? []).filter((a) => a.level >= 1).map((a) => a.item_type));
-  const now = Date.now();
-  for (const r of rows ?? []) {
-    if (!allowed.has(r.item_type) || r.item_type === "post_draft") continue; // posts are always one by one
-    await decide(r.id, { kind: "approve" }, now);
+  const allowed = (auto ?? []).filter((a) => a.level >= 1 && a.item_type !== "post_draft").map((a) => a.item_type); // posts: always one by one
+  const { data: rows } = await supabase
+    .from("review_items")
+    .select("id, item_type, title, draft, payload, material_id, post_id")
+    .in("id", ids)
+    .eq("status", "pending")
+    .in("item_type", allowed);
+  if (!rows?.length) return 0;
+
+  // One bulk update for the queue, one audit row per item (each decision is still traceable).
+  const at = new Date().toISOString();
+  await supabase
+    .from("review_items")
+    .update({ status: "approved", decided_by: user.id, decided_at: at, edit_distance: 0, edit_ratio: 0, seconds_to_decide: null })
+    .in("id", rows.map((r) => r.id));
+  await supabase.from("events").insert(
+    rows.map((r) => ({ actor: user.id, action: "review.approved", target_type: r.item_type, target_id: r.id, detail: { gate: 1, title: r.title, batch: true } })),
+  );
+
+  // Apply the approved labels, grouped so it is a handful of calls, not hundreds.
+  const groups = new Map<string, { topic: string; objective: string; materials: string[]; posts: string[] }>();
+  for (const r of rows.filter((x) => x.item_type === "classification")) {
+    const k = `${r.payload?.topic}|${r.payload?.objective}`;
+    const g = groups.get(k) ?? { topic: r.payload?.topic, objective: r.payload?.objective, materials: [] as string[], posts: [] as string[] };
+    if (r.material_id) g.materials.push(r.material_id);
+    if (r.post_id) g.posts.push(r.post_id);
+    groups.set(k, g);
   }
+  for (const g of groups.values()) {
+    const labels = { topic: g.topic, objective: g.objective, objective_status: "confirmed" };
+    if (g.materials.length) await supabase.from("materials").update({ ...labels, library_status: "approved" }).in("id", g.materials);
+    if (g.posts.length) await supabase.from("posts").update(labels).in("post_id", g.posts);
+  }
+  revalidatePath("/");
+  revalidatePath("/ledger");
+  return rows.length;
 }
 
-/** Upload a file (PDF, DOCX, TXT, MD) or pasted text into the library. Text is extracted, embedded, then classified (Gate 1). */
+/** Upload a file (PDF, DOCX, PPTX, TXT, MD) or pasted text into the library. Text is extracted, embedded, then classified (Gate 1). */
 export async function uploadMaterialAction(form: FormData) {
   const { supabase, user } = await requireUser();
   const kind = String(form.get("kind") || "other");
@@ -237,10 +271,15 @@ export async function uploadMaterialAction(form: FormData) {
     } else if (name.endsWith(".docx")) {
       const mammoth = await import("mammoth");
       body = (await mammoth.extractRawText({ buffer: buf })).value;
+    } else if (name.endsWith(".pptx")) {
+      // Decks: officeparser reads every slide's text (and speaker notes).
+      const { parseOffice } = await import("officeparser");
+      const ast = await parseOffice(buf);
+      body = String((await ast.to("text")).value ?? "");
     } else if (/\.(txt|md|markdown|csv)$/.test(name)) {
       body = buf.toString("utf8");
     } else {
-      throw new Error("Supported files: PDF, DOCX, TXT, MD.");
+      throw new Error("Supported files: PDF, Word (DOCX), PowerPoint (PPTX), TXT, MD.");
     }
     filePath = `${user.id}/${Date.now()}-${file.name.replace(/[^\w.-]+/g, "_")}`;
     await supabase.storage.from("library").upload(filePath, buf, { contentType: file.type || undefined });
@@ -253,11 +292,47 @@ export async function uploadMaterialAction(form: FormData) {
 
 /* ───────────── Performance upload (CSV) ───────────── */
 
-export async function uploadPerformanceAction(rows: Record<string, string>[], asOf: string) {
+/** dryRun = true returns the match report without saving, so the manager can check before importing. */
+export async function uploadPerformanceAction(rows: Record<string, string>[], asOf: string, dryRun = false) {
   const { supabase, user } = await requireUser();
   const { ingestPosts } = await import("@/lib/echo/ingest");
-  const report = await ingestPosts(supabase, rows, { asOf, via: "csv" });
-  await supabase.from("events").insert({ actor: user.id, action: "ingest.csv", target_type: "posts", detail: { ...report, as_of: asOf } });
-  revalidatePath("/signals");
+  const report = await ingestPosts(supabase, rows, { asOf, via: "csv", dryRun });
+  if (!dryRun) {
+    await supabase.from("events").insert({ actor: user.id, action: "ingest.csv", target_type: "posts", detail: report });
+    revalidatePath("/signals");
+  }
   return report;
+}
+
+/* ───────────── Conversational refinement (Gate 2) ───────────── */
+
+export async function refineAction(itemId: string, versionIndex: number, instruction: string) {
+  const { supabase, user } = await requireUser();
+  const { refineDraft } = await import("@/lib/echo/draft");
+  const idx = await refineDraft(supabase, itemId, versionIndex, instruction.trim().slice(0, 300), user.id);
+  await supabase.from("events").insert({ actor: user.id, action: "draft.refined", target_type: "review_item", target_id: itemId, detail: { instruction } });
+  revalidatePath("/");
+  return idx;
+}
+
+/* ───────────── Ask ECHO (Signals) ───────────── */
+
+export async function askAction(question: string) {
+  const { supabase, user } = await requireUser();
+  const { answerQuestion } = await import("@/lib/echo/analyse");
+  const a = await answerQuestion(supabase, question.slice(0, 500));
+  await supabase.from("events").insert({ actor: user.id, action: "question.asked", detail: { question } });
+  return a;
+}
+
+/** Turn an answer into a Gate 4 insight card, without another AI call. */
+export async function saveAnswerAsInsight(question: string, a: Awaited<ReturnType<typeof askAction>>) {
+  const { supabase, user } = await requireUser();
+  const { headline } = await import("@/lib/edit");
+  const { error } = await supabase.from("review_items").insert({
+    gate: 4, item_type: "insight", title: headline(a.observed_trend || a.answer, 110), reason: `Answer to: “${question}”`, brief: question,
+    draft: a.recommendation, payload: a, context: { objective: a.objective }, created_by: user.id,
+  });
+  if (error) throw error;
+  revalidatePath("/");
 }
