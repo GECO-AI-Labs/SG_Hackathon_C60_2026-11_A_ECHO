@@ -4,6 +4,8 @@ An AI desk for LinkedIn content. ECHO drafts posts from the company's own materi
 
 Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Content Management) · Pitch: Wed 9 Dec 2026.
 
+**Live app:** <https://echo-c60.vercel.app> (hosted on Vercel). Merging to `main` deploys it automatically. Only the team lead has Vercel access: ask them for environment variables (keys, the make.com webhook address), redeploys and server logs.
+
 ---
 
 ## The five screens
@@ -198,6 +200,8 @@ Run the database migrations first (`npm run db:push`): images and the sync log n
 ---
 
 ## Put it online (team lead)
+
+Already done: the app runs at <https://echo-c60.vercel.app>. Only the team lead has access to the Vercel project. These steps are for setting it up from scratch.
 
 1. **Supabase cloud:** create a project at [supabase.com](https://supabase.com) (region: Singapore). Then:
 
