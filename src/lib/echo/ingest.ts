@@ -34,7 +34,7 @@ export type IngestReport = {
 export async function ingestPosts(
   db: SupabaseClient,
   rows: PostRowIn[],
-  opts: { asOf?: string; via: "csv" | "make"; source?: "real" | "synthetic"; dryRun?: boolean },
+  opts: { asOf?: string; via: "csv" | "make"; source?: "real" | "synthetic" | "demo"; dryRun?: boolean },
 ): Promise<IngestReport> {
   const asOf = opts.asOf ?? new Date().toISOString().slice(0, 10);
   const valid = rows.filter((r) => r.published_date && (r.post_id || r.url || r.text));
@@ -45,7 +45,10 @@ export async function ingestPosts(
   const dates = valid.map((r) => String(r.published_date).slice(0, 10)).sort();
   const from = new Date(+new Date(dates[0]) - 864e5).toISOString().slice(0, 10);
   const to = new Date(+new Date(dates.at(-1)!) + 864e5).toISOString().slice(0, 10);
-  const { data: known } = await db.from("posts").select("post_id, url, published_date, text").gte("published_date", from).lte("published_date", to);
+  // Demo-profile posts and real-page posts never match each other.
+  const demo = opts.source === "demo";
+  const knownQ = db.from("posts").select("post_id, url, published_date, text").gte("published_date", from).lte("published_date", to);
+  const { data: known } = await (demo ? knownQ.eq("source", "demo") : knownQ.neq("source", "demo"));
   const byId = new Map((known ?? []).map((k) => [k.post_id, k]));
   const byUrl = new Map((known ?? []).filter((k) => k.url).map((k) => [k.url, k]));
 
@@ -60,7 +63,7 @@ export async function ingestPosts(
       hit = (known ?? []).find((k) => dayDiff(k.published_date, date) <= 1 && sameOpening(String(r.text), k.text)) ?? null;
       if (hit) { matched++; matchedByText++; }
     }
-    const postId = hit?.post_id ?? (id || `ext:${date}:${normText(String(r.text ?? url)).replace(/ /g, "-").slice(0, 30)}`);
+    const postId = hit?.post_id ?? (id || `${demo ? "demo" : "ext"}:${date}:${normText(String(r.text ?? url)).replace(/ /g, "-").slice(0, 30)}`);
     return { r, postId, isNew: !hit };
   });
 
@@ -75,7 +78,7 @@ export async function ingestPosts(
         post_id: postId, url: r.url ? String(r.url) : null, published_date: String(r.published_date).slice(0, 10),
         format: String(r.format || "text"), is_repost: bool(r.is_repost), text: text(r.text),
         char_count: int(r.char_count), hashtag_count: int(r.hashtag_count), has_link: bool(r.has_link),
-        source: (r.source as string) || opts.source || "real",
+        source: demo ? "demo" : (r.source as string) || opts.source || "real",
       })),
       { onConflict: "post_id" },
     );
@@ -86,13 +89,14 @@ export async function ingestPosts(
       withStats.map(({ r, postId }) => ({
         post_id: postId, as_of: asOf, impressions: int(r.impressions), unique_impressions: int(r.unique_impressions),
         clicks: int(r.clicks), likes: int(r.likes), comments: int(r.comments), shares: int(r.shares),
-        source: (r.source as string) || opts.source || "real", imported_via: opts.via,
+        source: demo ? "demo" : (r.source as string) || opts.source || "real", imported_via: opts.via,
       })),
       { onConflict: "post_id,as_of" },
     );
     if (error) throw error;
   }
-  const linked = await linkPublishedDrafts(db);
+  // Demo posts never link back to drafts: their results must not feed learning.
+  const linked = demo ? 0 : await linkPublishedDrafts(db);
   return { ...report, drafts_linked: linked };
 }
 
@@ -111,7 +115,7 @@ export async function linkPublishedDrafts(db: SupabaseClient) {
     .not("final", "is", null);
   if (!drafts?.length) return 0;
   const since = drafts.map((d) => d.decided_at).sort()[0]?.slice(0, 10) ?? "2000-01-01";
-  const { data: posts } = await db.from("posts").select("post_id, text, published_date").gte("published_date", since);
+  const { data: posts } = await db.from("posts").select("post_id, text, published_date").gte("published_date", since).neq("source", "demo");
   const words = (s: string) => new Set(normText(s).split(" ").filter((w) => w.length > 3));
   let linked = 0;
   for (const d of drafts) {

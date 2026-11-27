@@ -30,7 +30,7 @@ Read `README.md` first for what ECHO is and how to run it. This file is the rule
 ## Rules from the brief (never break)
 
 1. Every gate decision records who, when, what changed and why (`decide()` in `actions.ts` + `events` table).
-2. No auto-publish. Nothing posts to LinkedIn. Approval only marks content ready.
+2. No auto-publish. Nothing posts to the real LinkedIn page. Approval only marks content ready. One exception, for the demo: a person can click to send a Gate 2-approved post to the team's dummy LinkedIn profile through make.com (`src/lib/echo/publish.ts`, `publications` table, audit event). Data synced back from the dummy profile is `source = 'demo'` and never enters stats, insights or learning.
 3. Every draft cites library sources (`[n]` markers → `citations` column).
 4. AI-inferred objectives show "inferred" until a person confirms them.
 5. Insights keep `observed_trend` separate from `possible_explanation`. Never state cause.

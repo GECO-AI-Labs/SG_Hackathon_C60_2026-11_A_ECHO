@@ -42,6 +42,6 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Skip static files, images and the make.com webhook (it authenticates with its own secret).
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/ingest|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
+  // Skip static files, images and the make.com webhooks (they authenticate with a secret or a one-time token).
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/ingest|api/publish/callback|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)"],
 };

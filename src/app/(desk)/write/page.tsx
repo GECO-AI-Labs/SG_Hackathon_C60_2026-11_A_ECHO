@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/supabase/server";
 import { WriteForm } from "@/components/echo/write-form";
+import { DemoPublish, type Publication } from "@/components/echo/demo-publish";
 
 export const metadata: Metadata = { title: "Write" };
+
+/** A send with no make.com callback after 5 minutes probably failed inside the scenario. */
+const waitingTooLong = (status: string, requestedAt: string) => status === "sent" && Date.now() - new Date(requestedAt).getTime() > 5 * 60_000;
 
 export default async function WritePage({ searchParams }: { searchParams: Promise<{ rec?: string; brief?: string; source?: string }> }) {
   const { supabase } = await requireUser();
@@ -21,6 +25,36 @@ export default async function WritePage({ searchParams }: { searchParams: Promis
     supabase.from("rules").select("id", { count: "exact", head: true }).eq("active", true).eq("item_type", "post_draft"),
     supabase.from("materials").select("id", { count: "exact", head: true }).eq("library_status", "approved"),
   ]);
+
+  // Demo publishing: posts that passed Gate 2, and the sync log of what was sent to the dummy profile.
+  const [{ data: approved }, { data: pubs }] = await Promise.all([
+    supabase
+      .from("review_items")
+      .select("id, title, final, draft, decided_at, image_path")
+      .eq("item_type", "post_draft")
+      .in("status", ["approved", "edited"])
+      .eq("held_out", false)
+      .eq("source", "real")
+      .order("decided_at", { ascending: false })
+      .limit(5),
+    supabase
+      .from("publications")
+      .select("id, review_item_id, status, requested_at, published_at, linkedin_url, error, image_path, item:review_item_id(title), who:requested_by(display_name)")
+      .order("requested_at", { ascending: false })
+      .limit(8),
+  ]);
+  const imagePaths = (approved ?? []).map((a) => a.image_path as string | null).filter((x): x is string => !!x);
+  const { data: signed } = imagePaths.length ? await supabase.storage.from("post-images").createSignedUrls(imagePaths, 3600) : { data: [] };
+  const urls = new Map((signed ?? []).map((x) => [x.path, x.signedUrl]));
+  const latestByItem = new Map<string, string>();
+  for (const p of pubs ?? []) if (!latestByItem.has(p.review_item_id) && p.status !== "failed") latestByItem.set(p.review_item_id, p.status === "published" ? "Live on demo profile" : "Sent, waiting for make.com");
+  /* eslint-disable @typescript-eslint/no-explicit-any -- joined rows come back as objects */
+  const log: Publication[] = (pubs ?? []).map((p: any) => ({
+    id: p.id, title: p.item?.title ?? "Post", status: p.status, requested_at: p.requested_at, published_at: p.published_at,
+    linkedin_url: p.linkedin_url, error: p.error, by: p.who?.display_name ?? null, has_image: !!p.image_path,
+    stale: waitingTooLong(p.status, p.requested_at),
+  }));
+  /* eslint-enable @typescript-eslint/no-explicit-any */
 
   return (
     <div className="grid gap-10 lg:grid-cols-[1fr_20rem]">
@@ -49,8 +83,16 @@ export default async function WritePage({ searchParams }: { searchParams: Promis
           </ol>
         </div>
         <div className="border-t border-border pt-4 text-xs text-muted-foreground">
-          ECHO never publishes. After approval, copy the post and publish it on LinkedIn yourself.
+          ECHO never publishes to the Upskill Today page. After approval, copy the post and publish it there yourself.
         </div>
+        <DemoPublish
+          configured={!!process.env.MAKE_PUBLISH_WEBHOOK_URL}
+          log={log}
+          ready={(approved ?? []).map((a) => ({
+            id: a.id, title: a.title, text: a.final ?? a.draft ?? "", decided_at: a.decided_at,
+            image_url: a.image_path ? urls.get(a.image_path) ?? null : null, sent: latestByItem.get(a.id) ?? null,
+          }))}
+        />
       </aside>
     </div>
   );

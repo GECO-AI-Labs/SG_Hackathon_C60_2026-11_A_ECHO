@@ -365,6 +365,23 @@ export async function refineAction(itemId: string, versionIndex: number, instruc
   return idx;
 }
 
+/* ───────────── Demo publishing (make.com → dummy LinkedIn profile) ───────────── */
+
+/**
+ * A person sends one Gate 2-approved post to the DEMO profile. Never the real page, never automatic.
+ * make.com must reach the callback, so set APP_URL to the public address when running locally behind a tunnel.
+ */
+export async function sendToDemoAction(itemId: string) {
+  const { supabase, user } = await requireUser();
+  const { headers } = await import("next/headers");
+  const h = await headers();
+  const base = process.env.APP_URL?.replace(/\/$/, "") ?? `${h.get("x-forwarded-proto") ?? "http"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
+  const { sendToDemo } = await import("@/lib/echo/publish");
+  const id = await sendToDemo(supabase, itemId, user.id, `${base}/api/publish/callback`);
+  revalidatePath("/write");
+  return id;
+}
+
 /* ───────────── Post detail (Signals drawer) ───────────── */
 
 /** One post's full text, every reporting-period snapshot, and its library item (to repurpose it). */

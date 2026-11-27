@@ -14,7 +14,7 @@ export default async function SignalsPage({ searchParams }: { searchParams: Prom
     loadPerformance(supabase),
     supabase.from("page_daily").select("date, impressions, clicks, new_followers, page_views").order("date"),
     supabase.from("follower_demographics").select("dimension, value, organic_followers").in("dimension", ["Seniority", "Function", "AssociationType"]),
-    supabase.from("post_metrics").select("post_id, as_of, impressions, clicks").order("as_of", { ascending: false }).limit(10000),
+    supabase.from("post_metrics").select("post_id, as_of, impressions, clicks").neq("source", "demo").order("as_of", { ascending: false }).limit(10000),
   ]);
 
   // Reporting periods (one per upload or make.com run) and each post's previous snapshot.
