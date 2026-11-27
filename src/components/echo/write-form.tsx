@@ -20,10 +20,20 @@ const STARTERS = [
   "Last call: applications for the next cohort close this week",
 ];
 
-export function WriteForm({ recommendations, initialRec, initialBrief }: { recommendations: Rec[]; initialRec?: string; initialBrief?: string }) {
+type Source = { id: string; title: string; kind: string; excerpt: string };
+
+export function WriteForm({ recommendations, initialRec, initialBrief, source: initialSource }: {
+  recommendations: Rec[]; initialRec?: string; initialBrief?: string; source?: Source | null;
+}) {
+  const [source, setSource] = useState<Source | null>(initialSource ?? null);
   const router = useRouter();
   const fromRec = recommendations.find((r) => r.id === initialRec);
-  const [brief, setBrief] = useState(initialBrief ?? (fromRec ? `Write a post that applies this recommendation: ${fromRec.text}` : ""));
+  const [brief, setBrief] = useState(
+    initialBrief ??
+      (initialSource
+        ? `Repurpose “${initialSource.title.split(" · ").slice(initialSource.kind === "linkedin_post" ? 2 : 0).join(" · ") || initialSource.title}” into a new LinkedIn post with a fresh angle.`
+        : fromRec ? `Write a post that applies this recommendation: ${fromRec.text}` : ""),
+  );
   const [objective, setObjective] = useState<string>("infer");
   const [format, setFormat] = useState<string>("image");
   const [rec, setRec] = useState<string>(initialRec ?? "none");
@@ -38,6 +48,7 @@ export function WriteForm({ recommendations, initialRec, initialBrief }: { recom
           objective: objective === "infer" ? null : objective,
           format,
           recommendationId: rec === "none" ? null : rec,
+          sourceId: source?.id ?? null,
         });
         toast.success("Two versions are on your Desk");
         router.push(`/?item=${id}`);
@@ -48,6 +59,18 @@ export function WriteForm({ recommendations, initialRec, initialBrief }: { recom
 
   return (
     <div className="mt-8 max-w-2xl space-y-6">
+      {source && (
+        <div className="rounded-sm border border-border bg-card px-4 py-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="kicker">Repurposing · always cited as source 1</p>
+              <p className="mt-1 font-serif text-[1.05rem] leading-snug">{source.title}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{source.excerpt}</p>
+            </div>
+            <button onClick={() => setSource(null)} className="kicker shrink-0 hover:text-foreground">Remove</button>
+          </div>
+        </div>
+      )}
       {recommendations.length > 0 && (
         <div className="space-y-1.5">
           <Label>Shape it with an approved recommendation (Gate 4)</Label>

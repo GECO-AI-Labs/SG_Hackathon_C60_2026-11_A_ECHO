@@ -7,7 +7,7 @@ import { editRatio, levenshtein } from "@/lib/edit";
 import { generateDraft } from "@/lib/echo/draft";
 import { extractRules } from "@/lib/echo/learning";
 import { classifyMaterial, generateInsights, recommendMetrics } from "@/lib/echo/analyse";
-import { addMaterial, searchLibrary } from "@/lib/echo/library";
+import { addMaterial, getMaterial, searchLibraryPage, type LibraryFilters } from "@/lib/echo/library";
 import { OBJECTIVE_KEYS, type Objective, type RejectReason } from "@/lib/domain";
 
 /* ───────────── Auth ───────────── */
@@ -31,9 +31,14 @@ export async function signOut() {
 
 /* ───────────── Library ───────────── */
 
-export async function searchAction(query: string) {
+export async function searchAction(query: string, filters: LibraryFilters = {}) {
   const { supabase } = await requireUser();
-  return searchLibrary(supabase, query, { k: 12, approvedOnly: false });
+  return searchLibraryPage(supabase, query, filters);
+}
+
+export async function materialAction(id: string) {
+  const { supabase } = await requireUser();
+  return getMaterial(supabase, id);
 }
 
 /** Add pasted text or an uploaded file's extracted text to the library, then classify it (Gate 1). */
@@ -56,7 +61,7 @@ export async function addMaterialAction(input: { title: string; kind: string; bo
 
 /* ───────────── Drafting (Gate 2) ───────────── */
 
-export async function draftAction(input: { brief: string; objective: string | null; format: string | null; recommendationId?: string | null }) {
+export async function draftAction(input: { brief: string; objective: string | null; format: string | null; recommendationId?: string | null; sourceId?: string | null }) {
   const { supabase, user } = await requireUser();
   const objective = input.objective && OBJECTIVE_KEYS.includes(input.objective as Objective) ? (input.objective as Objective) : null;
   const id = await generateDraft(supabase, {
@@ -64,6 +69,7 @@ export async function draftAction(input: { brief: string; objective: string | nu
     objective,
     format: input.format ?? undefined,
     recommendationId: input.recommendationId ?? null,
+    sourceId: input.sourceId ?? null,
     actor: user.id,
   });
   await supabase.from("events").insert({ actor: user.id, action: "draft.created", target_type: "review_item", target_id: id });
@@ -178,9 +184,8 @@ export async function decide(itemId: string, decision: Decision, openedAt: numbe
 
 export async function extractRulesAction() {
   const { supabase, user } = await requireUser();
-  // Learn from post edits and from classification corrections.
-  const a = await extractRules(supabase, "post_draft", user.id);
-  const b = await extractRules(supabase, "classification", user.id);
+  // Learn from post edits and from classification corrections, in parallel (each AI call takes 30–60 s).
+  const [a, b] = await Promise.all([extractRules(supabase, "post_draft", user.id), extractRules(supabase, "classification", user.id)]);
   revalidatePath("/ledger");
   return { added: a.added + b.added };
 }

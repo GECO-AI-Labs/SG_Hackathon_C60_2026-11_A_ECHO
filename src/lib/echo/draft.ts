@@ -11,6 +11,7 @@ export type DraftInput = {
   objective?: Objective | null;   // null = let ECHO infer it (labelled "inferred")
   format?: string;                // e.g. "image", "multiImage", "text"
   recommendationId?: string | null; // an approved Gate 4 insight that shaped this post
+  sourceId?: string | null;       // repurpose: a library item that must be used as source [1]
   withLearning?: boolean;         // false = baseline, used for the before/after proof
   parentId?: string | null;       // "request another angle"
   actor?: string | null;
@@ -31,8 +32,21 @@ export const stripCitations = (s: string) => s.replace(/\s?\[(\d+(?:,\s*\d+)*)\]
 export async function generateDraft(db: SupabaseClient, input: DraftInput) {
   const withLearning = input.withLearning ?? true;
 
-  // 1. Retrieve: top library matches for the brief.
-  const hits: Hit[] = await searchLibrary(db, input.brief, { k: 6 });
+  // 1. Retrieve: top library matches for the brief. When repurposing, the chosen item comes first.
+  let hits: Hit[] = await searchLibrary(db, input.brief, { k: 6 });
+  let sourceTitle = "";
+  if (input.sourceId) {
+    const { data: src } = await db.from("materials").select("id, title, kind, source, post_id, published_date").eq("id", input.sourceId).single();
+    const { data: chunks } = await db.from("material_chunks").select("id, content").eq("material_id", input.sourceId).order("chunk_index").limit(4);
+    if (src && chunks?.length) {
+      sourceTitle = src.title;
+      const pinned: Hit[] = chunks.map((c) => ({
+        chunk_id: c.id, material_id: src.id, title: src.title, kind: src.kind, source: src.source,
+        post_id: src.post_id, published_date: src.published_date, content: c.content, similarity: 1,
+      }));
+      hits = [...pinned, ...hits.filter((h) => h.material_id !== src.id)].slice(0, 8);
+    }
+  }
 
   // 2. Brand voice + optional recommendation that shaped this post.
   const { data: brand } = await db.from("settings").select("value").eq("key", "brand").maybeSingle();
@@ -108,7 +122,7 @@ export async function generateDraft(db: SupabaseClient, input: DraftInput) {
       gate: 2,
       item_type: "post_draft",
       title: headline(input.brief),
-      reason: input.recommendationId ? "Drafted from an approved recommendation" : "Drafted from your brief",
+      reason: sourceTitle ? `Repurposed from: ${clip(sourceTitle, 70)}` : input.recommendationId ? "Drafted from an approved recommendation" : "Drafted from your brief",
       brief: input.brief,
       draft: versions[0].clean,
       payload: {
@@ -118,6 +132,7 @@ export async function generateDraft(db: SupabaseClient, input: DraftInput) {
         objective_reason: out.objective_reason,
         format: input.format ?? null,
         recommendation_id: input.recommendationId ?? null,
+        source_id: input.sourceId ?? null,
       },
       citations,
       context: { topic: out.topic, objective, format: input.format ?? null },

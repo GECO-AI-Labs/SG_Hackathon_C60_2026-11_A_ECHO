@@ -24,6 +24,9 @@ type Proof = {
 } | null;
 type Event = { id: number; action: string; target_type: string | null; detail: Record<string, unknown>; at: string; profiles: { display_name: string } | null };
 
+// Times are shown in Singapore time on the server and in the browser alike (Vercel servers run on UTC).
+const TZ = "Asia/Singapore";
+
 const TYPE_LABEL: Record<string, string> = { classification: "Classification (G1)", post_draft: "Post drafts (G2)", objective_metrics: "Objectives & metrics (G3)", insight: "Insights (G4)" };
 
 export function LedgerView({ types, rules, proof, trend, events }: { types: TypeRow[]; rules: RuleRow[]; proof: Proof; trend: { week: string; approval: number; edit: number; n: number }[]; events: Event[] }) {
@@ -138,7 +141,7 @@ export function LedgerView({ types, rules, proof, trend, events }: { types: Type
             <ChartContainer config={{ approval: { label: "Approved unedited", color: "var(--chart-2)" } } satisfies ChartConfig} className="mt-3 h-48 w-full">
               <LineChart data={trend} margin={{ top: 8, right: 8, left: 0 }}>
                 <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-                <XAxis dataKey="week" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} className="num" />
+                <XAxis dataKey="week" tickLine={false} axisLine={false} tickFormatter={(v) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} className="num" />
                 <YAxis tickLine={false} axisLine={false} width={36} domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} className="num" />
                 <ChartTooltip content={<ChartTooltipContent formatter={(v, _n, item) => `${Math.round(Number(v) * 100)}% of ${item.payload.n} decisions`} />} />
                 <Line dataKey="approval" stroke="var(--color-approval)" strokeWidth={2} dot={{ r: 3 }} type="monotone" />
@@ -158,7 +161,7 @@ export function LedgerView({ types, rules, proof, trend, events }: { types: Type
           {events.length === 0 && <li className="py-4 text-muted-foreground">No live activity yet. Seeded history is marked synthetic on the Desk.</li>}
           {events.map((e) => (
             <li key={e.id} className="grid grid-cols-[9rem_8rem_1fr] gap-3 py-2.5">
-              <span className="num text-xs text-muted-foreground">{new Date(e.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+              <span className="num text-xs text-muted-foreground">{new Date(e.at).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: TZ })}</span>
               <span className="truncate text-xs font-medium">{e.profiles?.display_name ?? "system"}</span>
               <span className="min-w-0 truncate text-xs">
                 <span className="num text-muted-foreground">{e.action}</span> {describe(e)}
@@ -243,7 +246,7 @@ function ProofView({ proof }: { proof: NonNullable<Proof> }) {
           <li><span className="num mr-2 text-pencil">2</span>ECHO wrote each one {p.runs_per_brief} times without its learned rules, and {p.runs_per_brief} times with them ({p.drafts} drafts each way, counting both versions).</li>
           <li><span className="num mr-2 text-pencil">3</span>Plain code, not AI, counted the mistakes on the right.</li>
         </ol>
-        <p className="num mt-4 text-[0.7rem] text-muted-foreground">Run {new Date(p.run_at).toLocaleString("en-GB")} · npm run proof</p>
+        <p className="num mt-4 text-[0.7rem] text-muted-foreground">Run {new Date(p.run_at).toLocaleString("en-GB", { timeZone: TZ })} · npm run proof</p>
       </div>
 
       <div>
@@ -257,7 +260,7 @@ function ProofView({ proof }: { proof: NonNullable<Proof> }) {
               <div>
                 <p className="text-sm font-medium">{MISTAKES[c.id] ?? c.id}</p>
                 <p className="text-xs text-muted-foreground">
-                  {c.without === 0 && c.with === 0 ? "Never happened either way" : c.with <= c.without / 2 ? `${c.without} → ${c.with}, learned` : c.with > c.without ? `${c.without} → ${c.with}, got worse` : `${c.without} → ${c.with}, not learned yet`}
+                  {c.without === 0 && c.with === 0 ? "Never happened either way" : c.with <= c.without / 2 ? `${c.without} → ${c.with} of ${p.drafts} drafts, learned` : c.with > c.without ? `${c.without} → ${c.with} of ${p.drafts} drafts, got worse` : `${c.without} → ${c.with} of ${p.drafts} drafts, not learned yet`}
                 </p>
               </div>
               <div className="space-y-1" title={`Before ${c.without} · after ${c.with} (out of ${p.drafts} drafts)`}>

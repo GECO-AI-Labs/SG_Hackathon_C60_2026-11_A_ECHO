@@ -87,10 +87,11 @@ export async function extractRules(db: SupabaseClient, itemType: ItemType = "pos
     insight: "AI-written performance insights",
   };
   const words = (s: string | null) => (s ?? "").trim().split(/\s+/).filter(Boolean).length;
+  const tags = (s: string | null) => ((s ?? "").match(/#[\p{L}\p{N}_]+/gu) ?? []).length;
   const log = decisions
     .map((d, i) =>
       d.status === "edited"
-        ? `#${i} EDITED (words ${words(d.draft)} → ${words(d.final)})\nDRAFT: ${d.draft}\nFINAL: ${d.final}`
+        ? `#${i} EDITED (words ${words(d.draft)} → ${words(d.final)}, hashtags ${tags(d.draft)} → ${tags(d.final)})\nDRAFT: ${d.draft}\nFINAL: ${d.final}`
         : `#${i} REJECTED reason=${d.decision_reason} note=${d.decision_note ?? ""}\nDRAFT: ${d.draft}`,
     )
     .join("\n\n---\n\n");
@@ -103,7 +104,8 @@ export async function extractRules(db: SupabaseClient, itemType: ItemType = "pos
         "Only propose a rule if at least 2 decisions support it. Look at structural edits as well as wording: " +
         "length (count words in DRAFT vs FINAL), the opening line, the ending, hashtags, links, claims, tone and labels. " +
         'Each rule is one short imperative sentence (e.g. "Do not open with a question."). ' +
-        "When the reviewer was consistent about a quantity, use the reviewer's FINAL numbers (e.g. the longest final word count), not the draft's. " +
+        "For a rule about a quantity, use the FINAL counts (in brackets) of the decisions that support THAT rule: the number the reviewer cut down to " +
+        "(e.g. drafts with 8-10 hashtags cut to 3 → \"at most 3 hashtags\"; drafts of 300 words cut to 110-140 → \"under 150 words\"). Never use the draft's numbers. " +
         "Never duplicate an existing rule. " +
         'Return JSON: {"rules":[{"rule":"…","rationale":"what the reviewer kept doing, in one sentence","evidence":[decision numbers, e.g. 3, 7]}]}. ' +
         'Return {"rules":[]} if nothing repeats.',
@@ -112,7 +114,7 @@ export async function extractRules(db: SupabaseClient, itemType: ItemType = "pos
       role: "user",
       content: `EXISTING RULES:\n${(existing ?? []).map((r) => "- " + r.rule).join("\n") || "(none)"}\n\nDECISIONS:\n${log}`,
     },
-  ], { maxTokens: 10000 });
+  ], { maxTokens: 6000, thinking: false }); // strong model, no thinking: keeps this under Vercel's time limit
 
   const fresh = (out.rules ?? []).filter((r) => r.rule && (r.evidence?.length ?? 0) >= 2).slice(0, 8);
   if (!fresh.length) return { added: 0 };

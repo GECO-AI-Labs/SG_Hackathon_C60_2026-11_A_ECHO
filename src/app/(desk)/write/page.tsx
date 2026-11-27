@@ -4,9 +4,12 @@ import { WriteForm } from "@/components/echo/write-form";
 
 export const metadata: Metadata = { title: "Write" };
 
-export default async function WritePage({ searchParams }: { searchParams: Promise<{ rec?: string; brief?: string }> }) {
+export default async function WritePage({ searchParams }: { searchParams: Promise<{ rec?: string; brief?: string; source?: string }> }) {
   const { supabase } = await requireUser();
-  const { rec, brief } = await searchParams;
+  const { rec, brief, source: sourceId } = await searchParams;
+  const { data: source } = sourceId
+    ? await supabase.from("materials").select("id, title, kind, body").eq("id", sourceId).maybeSingle()
+    : { data: null };
   const [{ data: recs }, { count: rules }, { count: library }] = await Promise.all([
     supabase
       .from("review_items")
@@ -32,6 +35,7 @@ export default async function WritePage({ searchParams }: { searchParams: Promis
           recommendations={(recs ?? []).map((r) => ({ id: r.id, title: r.title, text: r.final ?? r.draft ?? "", objective: r.payload?.objective }))}
           initialRec={rec}
           initialBrief={brief}
+          source={source ? { id: source.id, title: source.title, kind: source.kind, excerpt: source.body.slice(0, 280) } : null}
         />
       </section>
       <aside className="space-y-6 text-sm lg:border-l lg:border-border lg:pl-6">

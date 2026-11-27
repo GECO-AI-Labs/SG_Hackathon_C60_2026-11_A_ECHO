@@ -113,7 +113,7 @@ export function DeskQueue({ items, recent, initialId, batchTypes, topics, classi
                   {i.parent_id && i.item_type === "post_draft" && " · new angle"}
                 </span>
                 <span className="mt-1 line-clamp-2 block font-serif text-[1.05rem] leading-snug">{i.title}</span>
-                <span className="mt-1 block text-xs text-muted-foreground">{timeAgo(i.created_at)}</span>
+                <span className="mt-1 block text-xs text-muted-foreground" suppressHydrationWarning>{timeAgo(i.created_at)}</span>
               </button>
             </li>
           ))}

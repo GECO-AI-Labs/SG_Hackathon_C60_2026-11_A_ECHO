@@ -69,7 +69,7 @@ export function SignalsView(props: {
             {excluded} with under {DATA_RULES.minImpressions} impressions are left out.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Reporting periods: {props.reportPeriods.map((d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })).join(" · ") || "none"}
+            Reporting periods: {props.reportPeriods.map((d) => new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" })).join(" · ") || "none"}
             {props.reportPeriods.length < 2 && ". Upload another report to see change over time."}
           </p>
         </div>
@@ -116,9 +116,9 @@ export function SignalsView(props: {
               </linearGradient>
             </defs>
             <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
-            <XAxis dataKey="week" tickLine={false} axisLine={false} tickMargin={8} minTickGap={40} tickFormatter={(v) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short" })} className="num" />
+            <XAxis dataKey="week" tickLine={false} axisLine={false} tickMargin={8} minTickGap={40} tickFormatter={(v) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" })} className="num" />
             <YAxis tickLine={false} axisLine={false} width={44} className="num" />
-            <ChartTooltip cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3" }} content={<ChartTooltipContent labelFormatter={(v) => `Week of ${new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "long" })}`} />} />
+            <ChartTooltip cursor={{ stroke: "var(--muted-foreground)", strokeDasharray: "3 3" }} content={<ChartTooltipContent labelFormatter={(v) => `Week of ${new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "long", timeZone: "UTC" })}`} />} />
             <Area dataKey={trendMetric} type="monotone" stroke="var(--chart-1)" strokeWidth={2} fill="url(#fillTrend)" activeDot={{ r: 4, strokeWidth: 2, stroke: "var(--background)" }} />
           </AreaChart>
         </ChartContainer>

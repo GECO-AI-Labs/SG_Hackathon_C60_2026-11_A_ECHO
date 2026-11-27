@@ -23,6 +23,8 @@ type ChatOptions = {
   tier?: "smart" | "fast";
   temperature?: number;
   maxTokens?: number;
+  /** Override thinking (default: on for "smart", off for "fast"). Off is 3–5× faster. */
+  thinking?: boolean;
 };
 
 // Qwen-specific flag. Thinking improves drafts but triples latency.
@@ -49,7 +51,7 @@ export async function chatJSON<T>(messages: Msg[], opts: ChatOptions = {}): Prom
     temperature: opts.temperature ?? 0.4,
     max_tokens: opts.maxTokens ?? (fast ? 1500 : 8000), // thinking tokens count toward this limit
     response_format: { type: "json_object" },
-    enable_thinking: !fast,
+    enable_thinking: opts.thinking ?? !fast,
   } as OpenAI.ChatCompletionCreateParamsNonStreaming & QwenExtras);
   if (res.choices[0]?.finish_reason === "length")
     throw new Error("The AI answer was cut off (max_tokens too low for this task).");

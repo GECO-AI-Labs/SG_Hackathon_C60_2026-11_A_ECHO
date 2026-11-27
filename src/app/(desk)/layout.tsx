@@ -1,8 +1,8 @@
 import { Masthead } from "@/components/echo/masthead";
 import { requireUser } from "@/lib/supabase/server";
 
-// AI drafting and insights can take 20–40 s. Allow up to 60 s per request on Vercel.
-export const maxDuration = 60;
+// AI calls take 20–60 s (rule extraction is the slowest). Allow up to 120 s per request on Vercel.
+export const maxDuration = 120;
 
 export default async function DeskLayout({ children }: { children: React.ReactNode }) {
   const { supabase, user } = await requireUser();

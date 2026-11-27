@@ -12,7 +12,7 @@ Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Cont
 |---|---|---|
 | **Desk** | Review everything the AI prepared: approve, edit, reject or refine a draft ("shorter", "warmer"). Keys: `j`/`k` move, `a` approve, `e` edit, `r` reject. Batch approval appears once a task type earns Level 1 | 1–4 |
 | **Write** | Brief a new post, or start from an approved insight. ECHO searches the library and writes 2 versions with numbered sources | 2 |
-| **Library** | Search past posts and documents by meaning. Upload PDF, Word, PowerPoint or text | 1 |
+| **Library** | Search past posts and documents by meaning, with filters (type, topic, date) and sorting. Open any result to read it in full with its LinkedIn stats, then "Write a post from this" to repurpose it. Upload PDF, Word, PowerPoint or text | 1 |
 | **Signals** | Did posts hit their goal, comparisons by format and topic, trends, LinkedIn report upload, Ask ECHO | 3, 4 |
 | **Ledger** | What ECHO learned (rules you can switch off), trust per task, proof it improves, audit trail | – |
 
@@ -22,7 +22,7 @@ Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Cont
 
 | Live (real AI, real data) | Synthetic (labelled in the app) | Not built yet |
 |---|---|---|
-| Library search over 618 real posts; upload PDF, Word, PowerPoint, text | 3 reference documents (brochure, campaign brief, founder talk) | Confidence score per draft |
+| Library search over 618 real posts with filters, item view and repurposing; upload PDF, Word, PowerPoint, text | 3 reference documents (brochure, campaign brief, founder talk) | Confidence score per draft |
 | All 618 posts classified into 9 topics with inferred objectives (Gate 1) | 36 past reviewer decisions that seed learning | Level 2 auto-run |
 | Drafting with citations, 2 versions, conversational refinement | | make.com scenario + dummy LinkedIn page (teammate) |
 | All 4 gates with audit trail; batch approval once Level 1 is earned | | Separate data per LinkedIn page |

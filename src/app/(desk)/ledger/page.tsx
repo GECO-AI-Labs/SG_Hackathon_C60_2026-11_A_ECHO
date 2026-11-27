@@ -10,7 +10,8 @@ export default async function LedgerPage() {
   const [{ data: stats }, { data: autonomy }, { data: rules }, { data: proof }, { data: decisions }, { data: events }] = await Promise.all([
     supabase.from("trust_stats").select("*"),
     supabase.from("autonomy").select("*"),
-    supabase.from("rules").select("id, item_type, rule, rationale, active, origin, evidence_ids, created_at").order("created_at"),
+    // Rules extracted together share a timestamp: order by id as well so the list never reshuffles.
+    supabase.from("rules").select("id, item_type, rule, rationale, active, origin, evidence_ids, created_at").order("created_at").order("id"),
     supabase.from("settings").select("value").eq("key", "learning_proof").maybeSingle(),
     supabase
       .from("review_items")

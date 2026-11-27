@@ -93,3 +93,48 @@ export async function addMaterial(
   if (e2) throw e2;
   return data.id;
 }
+
+export type LibraryFilters = { kinds?: string[] | null; topics?: string[] | null; fromDate?: string | null };
+export type LibraryHit = Hit & {
+  topic: string | null; objective: string | null; objective_status: string; library_status: string;
+  impressions: number | null; clicks: number | null;
+};
+
+/** Library page search: same meaning-based retrieval as drafting, plus filters and stats. One row per material. */
+export async function searchLibraryPage(db: SupabaseClient, query: string, f: LibraryFilters = {}): Promise<LibraryHit[]> {
+  if (!query.trim()) return [];
+  const [vec] = await embed([query]);
+  const { data, error } = await db.rpc("search_library", {
+    query_embedding: toPgVector(vec),
+    query_text: query,
+    match_count: 60,
+    kinds: f.kinds?.length ? f.kinds : null,
+    topics: f.topics?.length ? f.topics : null,
+    from_date: f.fromDate ?? null,
+  });
+  if (error) throw error;
+  // Long documents have several chunks: keep the best chunk per material.
+  const seen = new Set<string>();
+  return ((data ?? []) as LibraryHit[]).filter((h) => !seen.has(h.material_id) && seen.add(h.material_id) !== undefined);
+}
+
+/** Everything the Library side panel shows about one item. */
+export async function getMaterial(db: SupabaseClient, id: string) {
+  const { data: m, error } = await db
+    .from("materials")
+    .select("id, title, kind, body, topic, objective, objective_status, library_status, source, published_date, post_id, file_path, created_at")
+    .eq("id", id)
+    .single();
+  if (error || !m) throw new Error("Item not found");
+  let post = null;
+  if (m.post_id) {
+    const { data } = await db
+      .from("post_performance")
+      .select("url, format, impressions, unique_impressions, clicks, likes, comments, shares, ctr, engagement_rate, comparable")
+      .eq("post_id", m.post_id)
+      .maybeSingle();
+    post = data;
+  }
+  const { count } = await db.from("review_items").select("id", { count: "exact", head: true }).eq("item_type", "post_draft").contains("citations", [{ material_id: id }]);
+  return { ...m, post, cited_in: count ?? 0 };
+}
