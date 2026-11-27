@@ -11,12 +11,13 @@ import { Input } from "@/components/ui/input";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { DATA_RULES, FORMATS, METRICS, OBJECTIVES, type Objective } from "@/lib/domain";
 import {
-  addDays, bucketDaily, bucketOf, byFormat, byTopic, clipToData, describePostFilters, filterPosts, filtersToQuery, median, objectiveResults, rangeLabel, resolvePeriod, sumDaily,
+  addDays, bucketDaily, bucketOf, byFormat, byTopic, clipToData, describePostFilters, filterPosts, filtersToQuery, objectiveResults, rangeLabel, resolvePeriod, sumDaily,
   type DailyMetric, type DailyRow, type Filters, type PostRow,
 } from "@/lib/echo/stats";
 import { cn } from "@/lib/utils";
 import { SignalFilters } from "./signal-filters";
 import { SignalScatter } from "./signal-scatter";
+import { PostDrawer, SignalTable } from "./signal-table";
 
 const pct = (v: number | null | undefined, d = 1) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
 const shortDate = (v: string) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -47,7 +48,7 @@ export function SignalsView(props: {
   const [filters, setFilters] = useState(props.initialFilters);
   const [trendMetric, setTrendMetric] = useState<"impressions" | "clicks" | "new_followers">("impressions");
   const [compare, setCompare] = useState<CompareKey>("median_impressions");
-  const [sortBy, setSortBy] = useState<"impressions" | "ctr" | "clicks">("impressions");
+  const [selected, setSelected] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<"format" | "topic">("format");
 
   // Filters live in the URL so a view can be bookmarked or shared. replaceState avoids a server round trip.
@@ -86,13 +87,7 @@ export function SignalsView(props: {
   }, [props.daily, cur, cmp, filters.grain, trendMetric]);
   const trendShown = clipToData(cur, props.daily);
 
-  const allComparable = useMemo(() => props.posts.filter((p) => p.comparable), [props.posts]);
-  const med = useMemo(() => ({
-    impressions: median(allComparable.map((p) => p.impressions ?? 0)),
-    ctr: median(allComparable.map((p) => p.ctr ?? 0)),
-    clicks: median(allComparable.map((p) => p.clicks ?? 0)),
-  }), [allComparable]);
-  const ranked = useMemo(() => [...comparable].sort((a, b) => (b[sortBy] ?? 0) - (a[sortBy] ?? 0)), [comparable, sortBy]);
+  const selectedPost = useMemo(() => props.posts.find((p) => p.post_id === selected) ?? null, [props.posts, selected]);
   const scope = [cur.label, ...describePostFilters(filters)].join(" · ");
 
   return (
@@ -260,73 +255,13 @@ export function SignalsView(props: {
       </section>
 
       {/* Reach vs clicks, engagement vs clicks (brief §8E) */}
-      <SignalScatter posts={inView} allPosts={props.posts} />
+      <SignalScatter posts={inView} allPosts={props.posts} onSelect={setSelected} />
 
-      {/* Post table */}
-      <section>
-        <SectionHead kicker="Posts" title="Best and weakest">
-          <Segmented value={sortBy} onChange={setSortBy} options={{ impressions: "Impressions", clicks: "Clicks", ctr: "CTR" }} />
-        </SectionHead>
-        {ranked.length ? (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[720px] text-sm">
-              <thead>
-                <tr className="border-b border-foreground text-left">
-                  <th className="kicker py-2 pr-3 font-normal">Date</th>
-                  <th className="kicker py-2 pr-3 font-normal">Post</th>
-                  <th className="kicker py-2 pr-3 font-normal">Format · topic</th>
-                  <th className="kicker py-2 pr-3 font-normal">Goal</th>
-                  <th className="kicker py-2 pr-3 text-right font-normal">Impr.</th>
-                  <th className="kicker py-2 pr-3 text-right font-normal">Clicks</th>
-                  <th className="kicker py-2 pr-3 text-right font-normal">CTR</th>
-                  {props.reportPeriods.length > 1 && <th className="kicker py-2 pr-3 text-right font-normal">Since last</th>}
-                  <th className="kicker py-2 text-right font-normal">vs median</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...ranked.slice(0, 6), ...(ranked.length > 12 ? ranked.slice(-4) : ranked.slice(6))].map((p, i, arr) => {
-                  const ratio = med[sortBy] ? (p[sortBy] ?? 0) / med[sortBy] : 0;
-                  const isBottom = ranked.length > 12 && i >= arr.length - 4;
-                  return (
-                    <tr key={p.post_id} className={cn("border-b border-border align-top", isBottom && i === arr.length - 4 && "border-t-2 border-t-foreground/20")}>
-                      <td className="num py-2.5 pr-3 text-xs whitespace-nowrap text-muted-foreground">{p.published_date}</td>
-                      <td className="py-2.5 pr-3">
-                        <a href={p.url} target="_blank" rel="noreferrer" className="line-clamp-2 max-w-md hover:underline">{p.text.split("\n")[0]}</a>
-                      </td>
-                      <td className="py-2.5 pr-3 text-xs">
-                        {FORMATS[p.format] ?? p.format}
-                        {p.topic && <span className="block text-muted-foreground">{p.topic}</span>}
-                      </td>
-                      <td className="py-2.5 pr-3 text-xs whitespace-nowrap" title={p.objective_status === "confirmed" ? "Confirmed by a reviewer" : "Inferred by ECHO, not confirmed"}>
-                        {p.objective ? (
-                          <>
-                            <span className={cn(results.perPost[p.post_id] ? "text-approve" : "text-pencil")}>{results.perPost[p.post_id] ? "✓ met" : "✗ missed"}</span>
-                            <span className="block text-muted-foreground">{OBJECTIVES[p.objective].label}{p.objective_status !== "confirmed" && " (inferred)"}</span>
-                          </>
-                        ) : "–"}
-                      </td>
-                      <td className="num py-2.5 pr-3 text-right">{p.impressions?.toLocaleString()}</td>
-                      <td className="num py-2.5 pr-3 text-right">{p.clicks}</td>
-                      <td className="num py-2.5 pr-3 text-right">{pct(p.ctr)}</td>
-                      {props.reportPeriods.length > 1 && (
-                        <td className="num py-2.5 pr-3 text-right text-xs text-muted-foreground" title={props.previous[p.post_id] ? `Impressions on ${props.previous[p.post_id].as_of}` : "First report for this post"}>
-                          {props.previous[p.post_id] ? `+${((p.impressions ?? 0) - props.previous[p.post_id].impressions).toLocaleString()}` : "new"}
-                        </td>
-                      )}
-                      <td className={cn("num py-2.5 text-right text-xs", ratio >= 1.5 ? "text-approve" : ratio < 0.5 ? "text-pencil" : "text-muted-foreground")}>
-                        {ratio >= 1.5 ? "▲ high" : ratio < 0.5 ? "▼ low" : ""} {ratio.toFixed(1)}×
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty />
-        )}
-        <p className="mt-2 text-xs text-muted-foreground">Top 6 and bottom 4 by the selected metric. High = 1.5× the page median or more, low = under half.</p>
-      </section>
+      {/* Every post in view */}
+      <SignalTable
+        posts={inView} allPosts={props.posts} perPost={results.perPost} previous={props.previous}
+        showSinceLast={props.reportPeriods.length > 1} range={cur} onSelect={setSelected}
+      />
 
       <section className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
         <AskEcho query={filtersToQuery(filters)} scope={scope} />
@@ -350,6 +285,8 @@ export function SignalsView(props: {
           </div>
         </div>
       </section>
+
+      <PostDrawer post={selectedPost} allPosts={props.posts} perPost={results.perPost} onClose={() => setSelected(null)} />
     </div>
   );
 }

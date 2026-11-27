@@ -321,6 +321,20 @@ export async function refineAction(itemId: string, versionIndex: number, instruc
   return idx;
 }
 
+/* ───────────── Post detail (Signals drawer) ───────────── */
+
+/** One post's full text, every reporting-period snapshot, and its library item (to repurpose it). */
+export async function postDetailAction(postId: string) {
+  const { supabase } = await requireUser();
+  const [{ data: post }, { data: snaps }, { data: material }] = await Promise.all([
+    supabase.from("posts").select("post_id, text, url").eq("post_id", postId).maybeSingle(),
+    supabase.from("post_metrics").select("as_of, impressions, unique_impressions, clicks, likes, comments, shares").eq("post_id", postId).order("as_of"),
+    supabase.from("materials").select("id").eq("post_id", postId).maybeSingle(),
+  ]);
+  if (!post) throw new Error("Post not found");
+  return { text: post.text as string, snapshots: snaps ?? [], materialId: (material?.id as string | undefined) ?? null };
+}
+
 /* ───────────── Ask ECHO (Signals) ───────────── */
 
 /** `query` is the Signals filter query string; the answer then covers only that view. */
