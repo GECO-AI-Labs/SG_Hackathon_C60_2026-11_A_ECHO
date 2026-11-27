@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
 import { requireUser } from "@/lib/supabase/server";
-import { byFormat, byTopic, loadPerformance, objectiveResults } from "@/lib/echo/analyse";
+import { loadPerformance } from "@/lib/echo/analyse";
+import { parseFilters, type DailyRow } from "@/lib/echo/stats";
+import { clip } from "@/lib/edit";
 import { SignalsView } from "@/components/echo/signals-view";
 
 export const metadata: Metadata = { title: "Signals" };
 
-export default async function SignalsPage() {
+export default async function SignalsPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const { supabase } = await requireUser();
-  const [posts, { data: daily }, { data: demo }, { data: snaps }] = await Promise.all([
+  const [filters, posts, { data: daily }, { data: demo }, { data: snaps }] = await Promise.all([
+    searchParams.then(parseFilters),
     loadPerformance(supabase),
-    supabase.from("page_daily").select("*").order("date"),
+    supabase.from("page_daily").select("date, impressions, clicks, new_followers, page_views").order("date"),
     supabase.from("follower_demographics").select("dimension, value, organic_followers").in("dimension", ["Seniority", "Function", "AssociationType"]),
     supabase.from("post_metrics").select("post_id, as_of, impressions, clicks").order("as_of", { ascending: false }).limit(10000),
   ]);
@@ -23,35 +26,11 @@ export default async function SignalsPage() {
     previous[s.post_id] ??= { as_of: s.as_of, impressions: s.impressions ?? 0, clicks: s.clicks ?? 0 };
   }
 
-  // Weekly totals keep the trend readable (daily LinkedIn numbers are spiky).
-  const weeks = new Map<string, { week: string; impressions: number; clicks: number; new_followers: number; page_views: number }>();
-  for (const d of daily ?? []) {
-    const dt = new Date(d.date + "T00:00:00Z");
-    dt.setUTCDate(dt.getUTCDate() - ((dt.getUTCDay() + 6) % 7)); // Monday
-    const key = dt.toISOString().slice(0, 10);
-    const w = weeks.get(key) ?? { week: key, impressions: 0, clicks: 0, new_followers: 0, page_views: 0 };
-    w.impressions += d.impressions ?? 0;
-    w.clicks += d.clicks ?? 0;
-    w.new_followers += d.new_followers ?? 0;
-    w.page_views += d.page_views ?? 0;
-    weeks.set(key, w);
-  }
-
-  // KPIs compare the last 3 FULL calendar months with the 3 before. Calendar months are easy to
-  // explain and do not shift when one day is added (a rolling 90-day window jumped ±30% on single-day spikes).
-  const last = daily?.length ? new Date(daily[daily.length - 1].date + "T00:00:00Z") : new Date();
-  const lastDayOfMonth = new Date(Date.UTC(last.getUTCFullYear(), last.getUTCMonth() + 1, 0)).getUTCDate();
-  const endMonth = last.getUTCDate() === lastDayOfMonth ? last.getUTCMonth() + 1 : last.getUTCMonth(); // exclusive
-  const m = (offset: number) => new Date(Date.UTC(last.getUTCFullYear(), endMonth + offset, 1));
-  const [curFrom, curTo, prevFrom] = [m(-3), m(0), m(-6)];
-  const sum = (k: string, from: Date, to: Date) =>
-    (daily ?? []).filter((r) => { const d = new Date(r.date + "T00:00:00Z"); return d >= from && d < to; }).reduce((s, r) => s + (r[k] ?? 0), 0);
-  const kpi = (k: string) => ({ now: sum(k, curFrom, curTo), before: sum(k, prevFrom, curFrom) });
-  const mon = (d: Date) => d.toLocaleDateString("en-GB", { month: "short", timeZone: "UTC" });
-  const periods = {
-    now: `${mon(curFrom)}–${mon(new Date(curTo.getTime() - 864e5))}`,
-    before: `${mon(prevFrom)}–${mon(new Date(curFrom.getTime() - 864e5))}`,
-  };
+  // Periods end at the latest data we hold, not today, so a stale export still shows numbers.
+  const rows = (daily ?? []) as DailyRow[];
+  const latestPost = posts.reduce((m, p) => (p.published_date > m ? p.published_date : m), "");
+  const lastDaily = rows.length ? rows[rows.length - 1].date : "";
+  const anchor = (lastDaily > latestPost ? lastDaily : latestPost) || new Date().toISOString().slice(0, 10);
 
   const totalFollowers = (demo ?? []).filter((d) => d.dimension === "Seniority").reduce((s, d) => s + d.organic_followers, 0);
   const top = (dim: string) =>
@@ -63,17 +42,13 @@ export default async function SignalsPage() {
 
   return (
     <SignalsView
-      kpis={{ impressions: kpi("impressions"), clicks: kpi("clicks"), new_followers: kpi("new_followers"), page_views: kpi("page_views") }}
-      periods={periods}
+      initialFilters={filters}
+      anchor={anchor}
+      daily={rows}
       reportPeriods={reportPeriods}
       previous={previous}
-      weekly={[...weeks.values()].slice(1, -1) /* drop partial first/last week */}
-      formats={byFormat(posts)}
-      topics={byTopic(posts)}
-      results={objectiveResults(posts)}
-      posts={posts.map((p) => ({ ...p, text: p.text.slice(0, 220) }))}
+      posts={posts.map((p) => ({ ...p, text: clip(p.text, 220) }))}
       audience={{ total: totalFollowers, employees: (demo ?? []).find((d) => d.value === "EMPLOYEE")?.organic_followers ?? 0, seniority: top("Seniority"), fn: top("Function") }}
-      lastDate={last.toISOString().slice(0, 10)}
     />
   );
 }

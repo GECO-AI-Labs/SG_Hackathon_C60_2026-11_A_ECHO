@@ -1,18 +1,13 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatJSON } from "@/lib/ai";
-import { DATA_RULES, FORMATS, METRICS, OBJECTIVES, OBJECTIVE_KEYS, type Objective } from "@/lib/domain";
+import { DATA_RULES, METRICS, OBJECTIVES, OBJECTIVE_KEYS, type Objective } from "@/lib/domain";
 import { activeRules, learningBlock } from "./learning";
+import { byFormat, byTopic, median, objectiveResults, type PostRow } from "./stats";
 
 /* ───────────────────────── Aggregates (plain code, no AI) ───────────────────────── */
 
-export type PostRow = {
-  post_id: string; url: string; published_date: string; format: string; is_repost: boolean; text: string;
-  char_count: number | null; hashtag_count: number | null; has_link: boolean | null; topic: string | null;
-  objective: Objective | null; objective_status: string;
-  impressions: number | null; unique_impressions: number | null; clicks: number | null; likes: number | null;
-  comments: number | null; shares: number | null; ctr: number | null; engagement_rate: number | null; comparable: boolean;
-};
+export type { PostRow } from "./stats";
 
 export async function loadPerformance(db: SupabaseClient, from = DATA_RULES.statsFrom) {
   const { data, error } = await db
@@ -23,76 +18,6 @@ export async function loadPerformance(db: SupabaseClient, from = DATA_RULES.stat
     .order("published_date", { ascending: false });
   if (error) throw error;
   return (data ?? []) as PostRow[];
-}
-
-const median = (xs: number[]) => {
-  if (!xs.length) return 0;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
-};
-
-/** Per-format comparison over comparable posts (≥ 30 impressions). Medians, not means: a few viral posts skew means. */
-export function byFormat(rows: PostRow[]) {
-  return byGroup(rows, (r) => r.format, (k) => FORMATS[k] ?? k);
-}
-
-/** Same comparison grouped by topic (topics come from bulk classification). */
-export function byTopic(rows: PostRow[]) {
-  return byGroup(rows, (r) => r.topic ?? "Unclassified", (k) => k);
-}
-
-function byGroup(rows: PostRow[], key: (r: PostRow) => string, label: (k: string) => string) {
-  const comp = rows.filter((r) => r.comparable);
-  const groups = new Map<string, PostRow[]>();
-  comp.forEach((r) => groups.set(key(r), [...(groups.get(key(r)) ?? []), r]));
-  return [...groups.entries()]
-    .map(([format, rs]) => ({
-      format,
-      label: label(format),
-      posts: rs.length,
-      lowSample: rs.length < DATA_RULES.lowSampleMin,
-      median_impressions: Math.round(median(rs.map((r) => r.impressions ?? 0))),
-      median_ctr: median(rs.map((r) => r.ctr ?? 0)),
-      median_er: median(rs.map((r) => r.engagement_rate ?? 0)),
-      median_clicks: median(rs.map((r) => r.clicks ?? 0)),
-    }))
-    .sort((a, b) => b.posts - a.posts);
-}
-
-/* ───────────────────────── Results against objectives ───────────────────────── */
-
-/**
- * Did each post hit ITS objective? A post "met" its goal when its primary metric
- * (impressions for awareness, clicks for lead generation, …) reached the page's
- * typical post: the median of that metric across all comparable posts.
- */
-export function objectiveResults(rows: PostRow[]) {
-  const comp = rows.filter((r) => r.comparable && r.objective);
-  const value = (r: PostRow, m: string) => Number((r as Record<string, unknown>)[m] ?? 0);
-  const baselines: Record<string, number> = {};
-  for (const o of OBJECTIVE_KEYS) {
-    const m = OBJECTIVES[o].primary[0];
-    baselines[m] ??= median(rows.filter((r) => r.comparable).map((r) => value(r, m)));
-  }
-  const perPost = new Map<string, boolean>();
-  const byObjective = OBJECTIVE_KEYS.map((o) => {
-    const metric = OBJECTIVES[o].primary[0];
-    const rs = comp.filter((r) => r.objective === o);
-    let met = 0;
-    rs.forEach((r) => {
-      const ok = value(r, metric) >= baselines[metric];
-      perPost.set(r.post_id, ok);
-      if (ok) met++;
-    });
-    return {
-      objective: o, metric, baseline: baselines[metric], posts: rs.length, met,
-      confirmed: rs.filter((r) => r.objective_status === "confirmed").length,
-    };
-  }).filter((x) => x.posts > 0);
-  const total = byObjective.reduce((s, x) => s + x.posts, 0);
-  const met = byObjective.reduce((s, x) => s + x.met, 0);
-  return { total, met, byObjective, perPost: Object.fromEntries(perPost) };
 }
 
 /* ───────────────────────── Gate 4: insights ───────────────────────── */
