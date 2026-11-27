@@ -3,7 +3,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { chatJSON } from "@/lib/ai";
 import { DATA_RULES, METRICS, OBJECTIVES, OBJECTIVE_KEYS, type Objective } from "@/lib/domain";
 import { activeRules, learningBlock } from "./learning";
-import { byFormat, byTopic, median, objectiveResults, type PostRow } from "./stats";
+import { clip } from "@/lib/edit";
+import {
+  byFormat, byTopic, describePostFilters, filterPosts, filtersToQuery, median, objectiveResults, parseFilters, resolvePeriod, sumDaily,
+  type DailyRow, type PostRow,
+} from "./stats";
 
 /* ───────────────────────── Aggregates (plain code, no AI) ───────────────────────── */
 
@@ -41,27 +45,59 @@ type InsightJSON = {
   }[];
 };
 
-/** The aggregates the model is allowed to see. Plain code computes them; the AI never reads raw guesses. */
-async function buildFacts(db: SupabaseClient) {
-  const rows = await loadPerformance(db);
+/** The filters behind a view, read from a Signals query string. Re-parsed here so nothing from the browser is trusted. */
+export async function resolveView(db: SupabaseClient, query = "") {
+  const filters = parseFilters(new URLSearchParams(query.slice(0, 2000)));
+  const [rows, { data: daily }] = await Promise.all([
+    loadPerformance(db),
+    db.from("page_daily").select("date, impressions, clicks, new_followers, page_views").order("date"),
+  ]);
+  const days = (daily ?? []) as DailyRow[];
+  const latestPost = rows.reduce((m, p) => (p.published_date > m ? p.published_date : m), "");
+  const lastDaily = days.at(-1)?.date ?? "";
+  const anchor = (lastDaily > latestPost ? lastDaily : latestPost) || new Date().toISOString().slice(0, 10);
+  const { cur, cmp } = resolvePeriod(filters, anchor);
+  const view = filterPosts(rows, filters, cur);
+  const scope = [cur.label, ...describePostFilters(filters)].join(" · ");
+  return { filters, rows, daily: days, anchor, cur, cmp, view, scope, query: filtersToQuery(filters) };
+}
+
+/**
+ * The aggregates the model is allowed to see. Plain code computes them; the AI never reads raw guesses.
+ * With a query string, the facts cover only that filtered view (period, format, topic, goal…).
+ */
+async function buildFacts(db: SupabaseClient, query = "") {
+  const { rows: all, view: rows, cur, cmp, daily, scope } = await resolveView(db, query);
   const comp = rows.filter((r) => r.comparable);
+  const allComp = all.filter((r) => r.comparable);
+  // "Above / below typical" always means against the page's all-time medians, same as the dashboard.
+  const pageMedian = { impressions: median(allComp.map((r) => r.impressions ?? 0)), ctr: median(allComp.map((r) => r.ctr ?? 0)), comments: median(allComp.map((r) => r.comments ?? 0)) };
   const top = [...comp].sort((a, b) => (b.ctr ?? 0) - (a.ctr ?? 0)).slice(0, 5);
   const topReach = [...comp].sort((a, b) => (b.impressions ?? 0) - (a.impressions ?? 0)).slice(0, 5);
   const reachNoClicks = [...comp]
-    .filter((r) => (r.impressions ?? 0) > median(comp.map((c) => c.impressions ?? 0)) && (r.ctr ?? 0) < median(comp.map((c) => c.ctr ?? 0)))
+    .filter((r) => (r.impressions ?? 0) > pageMedian.impressions && (r.ctr ?? 0) < pageMedian.ctr)
     .slice(0, 5);
   const linkVsNo = [true, false].map((hasLink) => {
     const g = comp.filter((r) => !!r.has_link === hasLink);
     return { has_link: hasLink, posts: g.length, median_ctr: median(g.map((r) => r.ctr ?? 0)), median_impr: median(g.map((r) => r.impressions ?? 0)) };
   });
-  const brief = (r: PostRow) => ({ date: r.published_date, format: r.format, topic: r.topic, impressions: r.impressions, clicks: r.clicks, ctr: r.ctr, opening: r.text.slice(0, 120) });
-  const results = objectiveResults(rows);
+  const brief = (r: PostRow) => ({ date: r.published_date, format: r.format, topic: r.topic, impressions: r.impressions, clicks: r.clicks, ctr: r.ctr, opening: clip(r.text, 120) });
+  const results = objectiveResults(rows, all);
+  const now = sumDaily(daily, cur);
+  const before = cmp ? sumDaily(daily, cmp) : null;
   return {
-    window: `${DATA_RULES.statsFrom} to today`,
+    window: scope,
+    window_note: query ? "These facts cover ONLY the filtered view above, not the whole history. Say which period you are talking about." : "Whole history.",
+    low_sample_warning: comp.length < DATA_RULES.lowSampleMin ? `Only ${comp.length} comparable posts in this view: treat every pattern as weak.` : null,
     posts_with_stats: rows.length,
     comparable_posts: comp.length,
     excluded_under_30_impressions: rows.length - comp.length,
-    page_median: { impressions: median(comp.map((r) => r.impressions ?? 0)), ctr: median(comp.map((r) => r.ctr ?? 0)), comments: median(comp.map((r) => r.comments ?? 0)) },
+    page_median_all_time: pageMedian,
+    page_totals: {
+      note: "Page-wide daily totals from LinkedIn. Format, topic and goal filters do not apply to these.",
+      period: cur.label, covered_every_day: now.covered, impressions: now.impressions, clicks: now.clicks, new_followers: now.new_followers,
+      ...(before?.covered && { comparison_period: cmp!.label, comparison: { impressions: before.impressions, clicks: before.clicks, new_followers: before.new_followers } }),
+    },
     by_format: byFormat(rows),
     by_topic: byTopic(rows),
     results_against_objectives: { share_met: results.total ? results.met / results.total : 0, by_objective: results.byObjective },
@@ -82,8 +118,8 @@ const ANALYST_RULES = [
 ];
 
 /** Answer a manager's question directly (Signals page). Can be saved as a Gate 4 insight afterwards. */
-export async function answerQuestion(db: SupabaseClient, question: string) {
-  const facts = await buildFacts(db);
+export async function answerQuestion(db: SupabaseClient, question: string, query = "") {
+  const facts = await buildFacts(db, query);
   return chatJSON<{
     answer: string; observed_trend: string; evidence: string[]; possible_explanation: string; recommendation: string; caveat: string; objective: Objective;
   }>([
@@ -101,8 +137,8 @@ export async function answerQuestion(db: SupabaseClient, question: string) {
 }
 
 /** Writes 1–3 insight cards to the review queue (Gate 4). The model sees aggregates only. */
-export async function generateInsights(db: SupabaseClient, actor?: string, question?: string) {
-  const facts = await buildFacts(db);
+export async function generateInsights(db: SupabaseClient, actor?: string, question?: string, query = "") {
+  const facts = await buildFacts(db, query);
   const rules = await activeRules(db, "insight");
   const out = await chatJSON<InsightJSON>([
     {
@@ -121,11 +157,11 @@ export async function generateInsights(db: SupabaseClient, actor?: string, quest
     gate: 4,
     item_type: "insight",
     title: ins.title,
-    reason: question ? `Answer to: “${question}”` : "Periodic performance review",
+    reason: question ? `Answer to: “${question}”` : `Performance review · ${facts.window}`,
     brief: question ?? null,
     draft: ins.recommendation,
     payload: ins,
-    context: { objective: ins.objective },
+    context: { objective: ins.objective, ...(query && { view: facts.window, filters: query }) },
     learning: { rule_ids: rules.map((r) => r.id) },
     created_by: actor ?? null,
   }));

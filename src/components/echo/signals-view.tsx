@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { ChartContainer, ChartTooltip, ChartTooltipContent, type ChartConfig } from "@/components/ui/chart";
 import { DATA_RULES, FORMATS, METRICS, OBJECTIVES, type Objective } from "@/lib/domain";
 import {
-  bucketDaily, byFormat, byTopic, clipToData, filterPosts, filtersToQuery, median, objectiveResults, rangeLabel, resolvePeriod, sumDaily,
+  addDays, bucketDaily, bucketOf, byFormat, byTopic, clipToData, describePostFilters, filterPosts, filtersToQuery, median, objectiveResults, rangeLabel, resolvePeriod, sumDaily,
   type DailyMetric, type DailyRow, type Filters, type PostRow,
 } from "@/lib/echo/stats";
 import { cn } from "@/lib/utils";
@@ -93,6 +93,7 @@ export function SignalsView(props: {
     clicks: median(allComparable.map((p) => p.clicks ?? 0)),
   }), [allComparable]);
   const ranked = useMemo(() => [...comparable].sort((a, b) => (b[sortBy] ?? 0) - (a[sortBy] ?? 0)), [comparable, sortBy]);
+  const scope = [cur.label, ...describePostFilters(filters)].join(" · ");
 
   return (
     <div className="space-y-14">
@@ -203,6 +204,7 @@ export function SignalsView(props: {
 
       {/* Results against objectives */}
       <ObjectiveResults results={results} />
+      <HitRateTrend posts={inView} perPost={results.perPost} grain={filters.grain} from={cur.from} to={cur.to} />
 
       {/* Format / topic comparison */}
       <section className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
@@ -327,7 +329,7 @@ export function SignalsView(props: {
       </section>
 
       <section className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
-        <AskEcho />
+        <AskEcho query={filtersToQuery(filters)} scope={scope} />
         <div>
           <p className="kicker">Who follows the page</p>
           <p className="mt-1 text-xs text-muted-foreground">Page-wide only. LinkedIn does not say who saw or engaged with a given post.</p>
@@ -396,10 +398,11 @@ function Rule({ n, title, children }: { n: string; title: string; children: Reac
 
 type Answer = Awaited<ReturnType<typeof askAction>>;
 
-function AskEcho() {
+function AskEcho({ query, scope }: { query: string; scope: string }) {
   const router = useRouter();
   const [q, setQ] = useState("");
   const [asked, setAsked] = useState("");
+  const [askedScope, setAskedScope] = useState("");
   const [answer, setAnswer] = useState<Answer | null>(null);
   const [pending, start] = useTransition();
   const [saving, startSave] = useTransition();
@@ -408,7 +411,8 @@ function AskEcho() {
     start(async () => {
       try {
         setAsked(question);
-        setAnswer(await askAction(question));
+        setAnswer(await askAction(question, query));
+        setAskedScope(scope);
       } catch (e) {
         toast.error((e as Error).message);
       }
@@ -416,7 +420,7 @@ function AskEcho() {
   const review = () =>
     start(async () => {
       try {
-        const n = await insightsAction();
+        const n = await insightsAction(undefined, query);
         toast.success(`${n} insight${n === 1 ? "" : "s"} on your Desk for Gate 4`);
         router.push("/");
       } catch (e) {
@@ -429,6 +433,7 @@ function AskEcho() {
       <p className="kicker">Stage 04 · what next</p>
       <h2 className="mt-1 text-2xl font-medium">Ask ECHO</h2>
       <p className="mt-1 text-sm text-muted-foreground">Ask about the numbers above. ECHO answers from the aggregates only and keeps what it saw apart from why it might be.</p>
+      <p className="mt-2 text-xs"><span className="kicker mr-2">Answers from</span>{scope}</p>
       <form onSubmit={(e) => { e.preventDefault(); if (q.trim()) ask(q); }} className="mt-4 flex gap-2">
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Which posts get clicks rather than just reactions?" className="h-10 bg-card" />
         <Button type="submit" disabled={pending || !q.trim()} className="h-10">Ask</Button>
@@ -437,13 +442,13 @@ function AskEcho() {
         {["What topics should we develop next?", "Which topics reach people but get no clicks?"].map((s) => (
           <button key={s} onClick={() => { setQ(s); ask(s); }} disabled={pending} className="underline-offset-4 hover:text-foreground hover:underline">{s}</button>
         ))}
-        <button onClick={review} disabled={pending} className="underline-offset-4 hover:text-foreground hover:underline">Review the whole period →</button>
+        <button onClick={review} disabled={pending} className="underline-offset-4 hover:text-foreground hover:underline">Review this view for Gate 4 →</button>
         {pending && <span className="kicker animate-pulse">Thinking… about 20 seconds</span>}
       </div>
 
       {answer && !pending && (
         <div className="mt-6 rounded-sm border border-border bg-card px-5 py-5">
-          <p className="kicker">“{asked}”</p>
+          <p className="kicker">“{asked}” · {askedScope}</p>
           <p className="mt-2 font-serif text-[1.15rem] leading-relaxed">{answer.answer}</p>
           {answer.evidence?.length > 0 && (
             <ul className="mt-3 space-y-0.5">{answer.evidence.map((e, i) => <li key={i} className="num text-[0.75rem] text-muted-foreground">— {e}</li>)}</ul>
@@ -464,7 +469,7 @@ function AskEcho() {
             <Button
               size="sm"
               disabled={saving}
-              onClick={() => startSave(async () => { await saveAnswerAsInsight(asked, answer); toast.success("Saved to the Desk for Gate 4"); router.refresh(); })}
+              onClick={() => startSave(async () => { await saveAnswerAsInsight(asked, answer, askedScope); toast.success("Saved to the Desk for Gate 4"); router.refresh(); })}
             >
               Save as insight (Gate 4)
             </Button>
@@ -599,6 +604,56 @@ function ObjectiveResults({ results }: { results: { total: number; met: number; 
           })}
         </tbody>
       </table>
+    </section>
+  );
+}
+
+/** Share of posts meeting their goal, per month (or week). Same fixed bar to beat as the table above. */
+function HitRateTrend({ posts, perPost, grain, from, to }: { posts: PostRow[]; perPost: Record<string, boolean>; grain: Filters["grain"]; from: string; to: string }) {
+  const g = grain === "day" ? "week" : grain; // a handful of posts per day is noise
+  const data = useMemo(() => {
+    const judged = posts.filter((p) => p.post_id in perPost);
+    if (!judged.length) return [];
+    const first = judged.reduce((m, p) => (p.published_date < m ? p.published_date : m), to);
+    const buckets = new Map<string, { key: string; posts: number; met: number }>();
+    // Every bucket from the first judged post to the end of the period, so empty months show as gaps.
+    for (let day = first > from ? first : from; day <= to; day = addDays(day, 1)) {
+      const key = bucketOf(day, g);
+      if (!buckets.has(key)) buckets.set(key, { key, posts: 0, met: 0 });
+    }
+    judged.forEach((p) => {
+      const b = buckets.get(bucketOf(p.published_date, g));
+      if (b) { b.posts++; if (perPost[p.post_id]) b.met++; }
+    });
+    return [...buckets.values()].map((b) => ({ ...b, rate: b.posts ? b.met / b.posts : null, few: b.posts < 3 }));
+  }, [posts, perPost, g, from, to]);
+
+  if (data.length < 2) return null;
+  return (
+    <section className="-mt-6">
+      <p className="kicker">Goal hit rate by {g}</p>
+      <ChartContainer config={{ rate: { label: "Met their goal", color: "var(--chart-2)" } } satisfies ChartConfig} className="mt-3 h-40 w-full">
+        <BarChart data={data} margin={{ left: 0, right: 8, top: 4 }}>
+          <CartesianGrid vertical={false} stroke="var(--chart-grid)" />
+          <XAxis dataKey="key" tickLine={false} axisLine={false} tickMargin={8} minTickGap={32} className="num"
+            tickFormatter={(v) => (g === "month" ? new Date(v).toLocaleDateString("en-GB", { month: "short", year: "2-digit", timeZone: "UTC" }) : shortDate(v))} />
+          <YAxis domain={[0, 1]} ticks={[0, 0.5, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} tickLine={false} axisLine={false} width={40} className="num" />
+          <ChartTooltip
+            cursor={{ fill: "var(--muted)" }}
+            content={
+              <ChartTooltipContent
+                hideIndicator
+                labelFormatter={(_, items) => { const r = items?.[0]?.payload; return r ? `${g === "month" ? "Month" : "Week"} of ${rangeLabel(r.key, r.key)}` : ""; }}
+                formatter={(_v, _n, item) => item.payload.posts ? `${item.payload.met} of ${item.payload.posts} posts met their goal${item.payload.few ? " (too few to read much into)" : ""}` : "No judged posts"}
+              />
+            }
+          />
+          <Bar dataKey="rate" radius={[3, 3, 0, 0]} maxBarSize={28}>
+            {data.map((d) => <Cell key={d.key} fill="var(--chart-2)" fillOpacity={d.few ? 0.35 : 1} />)}
+          </Bar>
+        </BarChart>
+      </ChartContainer>
+      <p className="mt-1 text-xs text-muted-foreground">Faded bars: fewer than 3 posts with a goal that {g}. Gaps: no posts.</p>
     </section>
   );
 }

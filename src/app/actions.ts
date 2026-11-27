@@ -207,9 +207,10 @@ export async function setAutonomy(itemType: string, level: number) {
 
 /* ───────────── Insights (Gate 4) ───────────── */
 
-export async function insightsAction(question?: string) {
+/** `query` is the Signals filter query string; insights then cover only that view. */
+export async function insightsAction(question?: string, query = "") {
   const { supabase, user } = await requireUser();
-  const n = await generateInsights(supabase, user.id, question);
+  const n = await generateInsights(supabase, user.id, question, query);
   revalidatePath("/");
   return n;
 }
@@ -322,21 +323,23 @@ export async function refineAction(itemId: string, versionIndex: number, instruc
 
 /* ───────────── Ask ECHO (Signals) ───────────── */
 
-export async function askAction(question: string) {
+/** `query` is the Signals filter query string; the answer then covers only that view. */
+export async function askAction(question: string, query = "") {
   const { supabase, user } = await requireUser();
   const { answerQuestion } = await import("@/lib/echo/analyse");
-  const a = await answerQuestion(supabase, question.slice(0, 500));
-  await supabase.from("events").insert({ actor: user.id, action: "question.asked", detail: { question } });
+  const a = await answerQuestion(supabase, question.slice(0, 500), query);
+  await supabase.from("events").insert({ actor: user.id, action: "question.asked", detail: { question, ...(query && { filters: query }) } });
   return a;
 }
 
 /** Turn an answer into a Gate 4 insight card, without another AI call. */
-export async function saveAnswerAsInsight(question: string, a: Awaited<ReturnType<typeof askAction>>) {
+export async function saveAnswerAsInsight(question: string, a: Awaited<ReturnType<typeof askAction>>, scope?: string) {
   const { supabase, user } = await requireUser();
-  const { headline } = await import("@/lib/edit");
+  const { clip, headline } = await import("@/lib/edit");
+  const view = scope ? clip(scope, 200) : null;
   const { error } = await supabase.from("review_items").insert({
-    gate: 4, item_type: "insight", title: headline(a.observed_trend || a.answer, 110), reason: `Answer to: “${question}”`, brief: question,
-    draft: a.recommendation, payload: a, context: { objective: a.objective }, created_by: user.id,
+    gate: 4, item_type: "insight", title: headline(a.observed_trend || a.answer, 110), reason: `Answer to: “${question}”${view ? ` · ${view}` : ""}`, brief: question,
+    draft: a.recommendation, payload: a, context: { objective: a.objective, ...(view && { view }) }, created_by: user.id,
   });
   if (error) throw error;
   revalidatePath("/");
