@@ -16,6 +16,7 @@ import {
 } from "@/lib/echo/stats";
 import { cn } from "@/lib/utils";
 import { SignalFilters } from "./signal-filters";
+import { SignalScatter } from "./signal-scatter";
 
 const pct = (v: number | null | undefined, d = 1) => (v == null ? "–" : `${(v * 100).toFixed(d)}%`);
 const shortDate = (v: string) => new Date(v).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -255,6 +256,9 @@ export function SignalsView(props: {
           </details>
         </aside>
       </section>
+
+      {/* Reach vs clicks, engagement vs clicks (brief §8E) */}
+      <SignalScatter posts={inView} allPosts={props.posts} />
 
       {/* Post table */}
       <section>
