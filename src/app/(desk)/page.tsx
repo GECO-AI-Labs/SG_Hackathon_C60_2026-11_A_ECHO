@@ -28,9 +28,15 @@ export default async function DeskPage({ searchParams }: { searchParams: Promise
     supabase.from("trust_stats").select("decided, approved_unedited").eq("item_type", "classification").maybeSingle(),
   ]);
 
+  // Post images live in a private bucket: sign 1-hour preview links for the drafts that have one.
+  const paths = (pending ?? []).map((i) => i.image_path as string | null).filter((x): x is string => !!x);
+  const { data: signed } = paths.length ? await supabase.storage.from("post-images").createSignedUrls(paths, 3600) : { data: [] };
+  const urls = new Map((signed ?? []).map((x) => [x.path, x.signedUrl]));
+  const items = (pending ?? []).map((i) => ({ ...i, image_url: i.image_path ? urls.get(i.image_path) ?? null : null })) as QueueItem[];
+
   return (
     <DeskQueue
-      items={(pending ?? []) as QueueItem[]}
+      items={items}
       recent={(recent ?? []) as unknown as RecentRow[]}
       initialId={item}
       batchTypes={(autonomy ?? []).filter((a) => a.level >= 1).map((a) => a.item_type)}

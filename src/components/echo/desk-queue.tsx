@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
-import { decide, decideMany, refineAction } from "@/app/actions";
+import { decide, decideMany, refineAction, setDraftImageAction } from "@/app/actions";
 import type { RecentRow } from "@/app/(desk)/page";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -15,6 +15,7 @@ import { runChecks } from "@/lib/echo/checks";
 import { cn } from "@/lib/utils";
 import { Footnoted, ProofMarks } from "./text-marks";
 import { ObjectiveTag, SourceTag } from "./tags";
+import { PostImagePicker, type PostImage } from "./post-image";
 
 // payload/context are JSON columns whose shape differs per gate (see lib/echo/*.ts).
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -23,6 +24,8 @@ export type QueueItem = {
   draft: string | null; payload: Record<string, any>; citations: Citation[]; context: Record<string, any>;
   learning: { with_learning?: boolean; rule_ids?: string[]; example_ids?: string[] }; source: string; created_at: string;
   parent_id: string | null;
+  image_path?: string | null;
+  image_url?: string | null;
   parent?: { title: string; final: string | null; draft: string | null } | null;
   material?: { body: string; kind: string } | null;
 };
@@ -387,6 +390,8 @@ function PostBody(p: {
           )}
         </div>
 
+        <DraftImage key={item.id} item={item} />
+
         <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
           {p.checks.map((c) => (
             <li key={c.id} className={cn("flex items-center gap-1.5 text-xs", c.pass ? "text-muted-foreground" : "text-pencil")} title={c.detail}>
@@ -423,6 +428,27 @@ function PostBody(p: {
         </ol>
         {unused.length > 0 && <p className="mt-4 text-[0.7rem] text-muted-foreground">{unused.length} more retrieved but not used.</p>}
       </aside>
+    </div>
+  );
+}
+
+/** The draft's optional image. The reviewer can add, swap or remove it while Gate 2 is open. */
+function DraftImage({ item }: { item: QueueItem }) {
+  const router = useRouter();
+  const [image, setImage] = useState<PostImage | null>(item.image_path ? { path: item.image_path, url: item.image_url ?? null } : null);
+  return (
+    <div className="mt-4">
+      <p className="kicker mb-2">Image</p>
+      <PostImagePicker
+        compact
+        value={image}
+        onChange={async (img) => {
+          await setDraftImageAction(item.id, img?.path ?? null);
+          setImage(img);
+          toast.success(img ? "Image saved on this draft" : "Image removed");
+          router.refresh();
+        }}
+      />
     </div>
   );
 }

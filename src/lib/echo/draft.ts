@@ -16,6 +16,7 @@ export type DraftInput = {
   parentId?: string | null;       // "request another angle"
   actor?: string | null;
   heldOut?: boolean;
+  imagePath?: string | null;      // optional image (post-images bucket), travels with the draft
 };
 
 type Version = { angle: string; text: string };
@@ -138,6 +139,7 @@ export async function generateDraft(db: SupabaseClient, input: DraftInput) {
       context: { topic: out.topic, objective, format: input.format ?? null },
       learning: { with_learning: withLearning, rule_ids: rules.map((r) => r.id), example_ids: examples.map((e) => e.id) },
       parent_id: input.parentId ?? null,
+      image_path: input.imagePath ?? null,
       held_out: input.heldOut ?? false,
       created_by: input.actor ?? null,
     })

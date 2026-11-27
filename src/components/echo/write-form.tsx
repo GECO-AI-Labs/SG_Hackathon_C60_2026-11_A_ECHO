@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { FORMATS, OBJECTIVES, OBJECTIVE_KEYS } from "@/lib/domain";
 import { cn } from "@/lib/utils";
+import { PostImagePicker, type PostImage } from "./post-image";
 
 type Rec = { id: string; title: string; text: string; objective?: string };
 
@@ -37,6 +38,7 @@ export function WriteForm({ recommendations, initialRec, initialBrief, source: i
   const [objective, setObjective] = useState<string>("infer");
   const [format, setFormat] = useState<string>("image");
   const [rec, setRec] = useState<string>(initialRec ?? "none");
+  const [image, setImage] = useState<PostImage | null>(null);
   const [pending, start] = useTransition();
   const chosenRec = recommendations.find((r) => r.id === rec);
 
@@ -49,6 +51,7 @@ export function WriteForm({ recommendations, initialRec, initialBrief, source: i
           format,
           recommendationId: rec === "none" ? null : rec,
           sourceId: source?.id ?? null,
+          imagePath: image?.path ?? null,
         });
         toast.success("Two versions are on your Desk");
         router.push(`/?item=${id}`);
@@ -129,6 +132,12 @@ export function WriteForm({ recommendations, initialRec, initialBrief, source: i
             </SelectContent>
           </Select>
         </div>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label>Image (optional)</Label>
+        <PostImagePicker value={image} onChange={setImage} disabled={pending} />
+        <p className="text-xs text-muted-foreground">Travels with the draft to Gate 2, where the reviewer can swap or remove it.</p>
       </div>
 
       <div className="flex items-center gap-4 border-t border-border pt-6">

@@ -61,8 +61,9 @@ export async function addMaterialAction(input: { title: string; kind: string; bo
 
 /* ───────────── Drafting (Gate 2) ───────────── */
 
-export async function draftAction(input: { brief: string; objective: string | null; format: string | null; recommendationId?: string | null; sourceId?: string | null }) {
+export async function draftAction(input: { brief: string; objective: string | null; format: string | null; recommendationId?: string | null; sourceId?: string | null; imagePath?: string | null }) {
   const { supabase, user } = await requireUser();
+  const imagePath = input.imagePath ? ownImagePath(input.imagePath, user.id) : null;
   const objective = input.objective && OBJECTIVE_KEYS.includes(input.objective as Objective) ? (input.objective as Objective) : null;
   const id = await generateDraft(supabase, {
     brief: input.brief,
@@ -70,11 +71,53 @@ export async function draftAction(input: { brief: string; objective: string | nu
     format: input.format ?? undefined,
     recommendationId: input.recommendationId ?? null,
     sourceId: input.sourceId ?? null,
+    imagePath,
     actor: user.id,
   });
   await supabase.from("events").insert({ actor: user.id, action: "draft.created", target_type: "review_item", target_id: id });
   revalidatePath("/");
   return id;
+}
+
+/* ───────────── Post images ───────────── */
+
+const IMAGE_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+
+/** Paths are `<user id>/<uuid>.<ext>`. Refuse anything else so a client cannot point a draft at another file. */
+function ownImagePath(path: string, userId: string) {
+  if (!new RegExp(`^${userId}/[0-9a-f-]{36}\\.(png|jpg|gif|webp)$`).test(path)) throw new Error("Unknown image.");
+  return path;
+}
+
+/** Store an image for a post (Write page or Gate 2). Returns its path and a 1-hour preview URL. */
+export async function uploadPostImageAction(form: FormData) {
+  const { supabase, user } = await requireUser();
+  const file = form.get("file") as File | null;
+  if (!file || !file.size) throw new Error("Choose an image.");
+  const ext = IMAGE_TYPES[file.type];
+  if (!ext) throw new Error("PNG, JPEG, GIF or WebP images only.");
+  if (file.size > 8 * 1024 * 1024) throw new Error("Images up to 8 MB, please.");
+  const path = `${user.id}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from("post-images").upload(path, Buffer.from(await file.arrayBuffer()), { contentType: file.type });
+  if (error) throw error;
+  const { data } = await supabase.storage.from("post-images").createSignedUrl(path, 3600);
+  return { path, url: data?.signedUrl ?? null };
+}
+
+/** Add, replace or remove the image on a post draft still waiting at Gate 2. Logged like every other change. */
+export async function setDraftImageAction(itemId: string, path: string | null) {
+  const { supabase, user } = await requireUser();
+  const { data: item } = await supabase.from("review_items").select("id, item_type, status, image_path").eq("id", itemId).single();
+  if (!item || item.item_type !== "post_draft") throw new Error("Not a post draft.");
+  if (item.status !== "pending") throw new Error("Images can change only before Gate 2 is decided.");
+  const next = path ? ownImagePath(path, user.id) : null;
+  const { error } = await supabase.from("review_items").update({ image_path: next }).eq("id", itemId);
+  if (error) throw error;
+  await supabase.from("events").insert({
+    actor: user.id, action: next ? "draft.image_set" : "draft.image_removed", target_type: "post_draft", target_id: itemId,
+    detail: { from: item.image_path, to: next },
+  });
+  revalidatePath("/");
 }
 
 /* ───────────── Decisions (all gates) ───────────── */
@@ -172,6 +215,7 @@ export async function decide(itemId: string, decision: Decision, openedAt: numbe
       objective: item.payload?.objective_status === "confirmed" ? item.payload.objective : null,
       format: item.payload?.format ?? undefined,
       parentId: itemId,
+      imagePath: item.image_path ?? null,
       actor: user.id,
     });
   }
