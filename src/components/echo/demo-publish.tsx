@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { sendToDemoAction } from "@/app/actions";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,15 @@ const when = (iso: string) => new Date(iso).toLocaleString("en-GB", { day: "nume
  * count in Signals or learning.
  */
 export function DemoPublish({ ready, log, configured }: { ready: ReadyPost[]; log: Publication[]; configured: boolean }) {
+  const router = useRouter();
+  // While make.com has not called back yet, re-read the log every 3 s so "live" appears without a reload.
+  const waiting = log.some((l) => (l.status === "sending" || l.status === "sent") && !l.stale);
+  useEffect(() => {
+    if (!waiting) return;
+    const t = setInterval(() => router.refresh(), 3000);
+    return () => clearInterval(t);
+  }, [waiting, router]);
+
   return (
     <div className="space-y-4 border-t border-border pt-4">
       <div>
