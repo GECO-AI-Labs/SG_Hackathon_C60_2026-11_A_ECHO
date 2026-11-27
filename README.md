@@ -1,6 +1,6 @@
 # ECHO: Every Content Hits Objectives
 
-An AI desk for LinkedIn content. ECHO drafts posts from the company's own material, reads what performed, and learns from every approval, edit and rejection. A marketing manager approves everything at four gates. Nothing is published automatically.
+An AI desk for LinkedIn content. ECHO drafts posts from the company's own material, reads what performed, and learns from every approval, edit and rejection. A marketing manager approves everything at four gates. Nothing is published automatically, and nothing is ever posted to the real page. For the demo, a person can send an approved post to the team's dummy LinkedIn profile through make.com.
 
 Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Content Management) · Pitch: Wed 9 Dec 2026.
 
@@ -11,9 +11,9 @@ Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Cont
 | Screen | What you do there | Gate |
 |---|---|---|
 | **Desk** | Review everything the AI prepared: approve, edit, reject or refine a draft ("shorter", "warmer"). Keys: `j`/`k` move, `a` approve, `e` edit, `r` reject. Batch approval appears once a task type earns Level 1 | 1–4 |
-| **Write** | Brief a new post, or start from an approved insight. ECHO searches the library and writes 2 versions with numbered sources | 2 |
+| **Write** | Brief a new post (optionally with an image), or start from an approved insight. ECHO searches the library and writes 2 versions with numbered sources. Approved posts can be sent to the dummy LinkedIn profile, with a sync log | 2 |
 | **Library** | Search past posts and documents by meaning, with filters (type, topic, date) and sorting. Open any result to read it in full with its LinkedIn stats, then "Write a post from this" to repurpose it. Upload PDF, Word, PowerPoint or text | 1 |
-| **Signals** | Did posts hit their goal, comparisons by format and topic, trends, LinkedIn report upload, Ask ECHO | 3, 4 |
+| **Signals** | One filter bar (period, compare with previous period or last year, day/week/month, format, topic, goal, confirmed/inferred, link) drives everything: KPIs, trend, goal hit rate, format and topic comparison, reach vs clicks scatter, the full post table (sort, search, CSV) and Ask ECHO. Filters live in the URL. "Report for this view" opens a printable report | 3, 4 |
 | **Ledger** | What ECHO learned (rules you can switch off), trust per task, proof it improves, audit trail | – |
 
 **The loop in one line:** upload material → ECHO tags it (G1) → ask for insights (G4) → brief a post from an insight → ECHO drafts with sources (G2) → confirm the success metrics (G3) → your edits become rules → the next draft is better.
@@ -24,12 +24,13 @@ Hackathon project · Cohort 60 · Track 3 "Prototype the Future" · Team A (Cont
 |---|---|---|
 | Library search over 618 real posts with filters, item view and repurposing; upload PDF, Word, PowerPoint, text | 3 reference documents (brochure, campaign brief, founder talk) | Confidence score per draft |
 | All 618 posts classified into 9 topics with inferred objectives (Gate 1) | 36 past reviewer decisions that seed learning | Level 2 auto-run |
-| Drafting with citations, 2 versions, conversational refinement | | make.com scenario + dummy LinkedIn page (teammate) |
+| Drafting with citations, 2 versions, conversational refinement, optional image | | Error route in the make.com publish scenario |
 | All 4 gates with audit trail; batch approval once Level 1 is earned | | Separate data per LinkedIn page |
 | Results against objectives: did each post hit its goal? | | |
-| Dashboard by format and topic, calendar-month KPIs | | |
+| Dashboard with filters and period comparison, reach vs clicks scatter, full post table with CSV, printable period report | | |
 | Ask ECHO: direct answers, trend kept apart from explanation | | |
 | LinkedIn XLSX/CSV upload as reporting periods, make.com webhook | | |
+| Send an approved post to the dummy LinkedIn profile via make.com, with callback and sync log (demo data kept out of stats) | | |
 | Rule extraction (posts and classifications), results-weighted examples | | |
 | Learning proof: house-rule mistakes drop by about 70% after learning | | |
 
@@ -80,7 +81,7 @@ You need: **Node.js 22+** ([download](https://nodejs.org)), **Git**, and either 
 The AI rules for this project live in `AGENTS.md` (Claude Code also reads `CLAUDE.md`, which points there). Good ways to ask:
 
 - "Read AGENTS.md. Then add a 'shorter' button to the draft card that asks ECHO to rewrite the selected version under 80 words."
-- "In Signals, add a date-range filter to the post table. Keep the 30-impression rule."
+- "In Signals, add a filter for posts with hashtags. Put it in the shared filter bar (src/lib/echo/stats.ts) so Ask ECHO and the report follow it too."
 - "Explain how a draft is built, step by step, using src/lib/echo/draft.ts."
 
 Before you push, ask the assistant to run `npm run typecheck && npm run lint && npm run build`.
@@ -116,9 +117,10 @@ Browser ── Next.js app (screens + server actions) ── Supabase (Postgres 
 ```
 src/app/(desk)/        one folder per screen (desk, write, library, signals, ledger)
 src/app/actions.ts     every button that saves something
-src/app/api/ingest/    webhook for make.com
+src/app/api/ingest/    webhook for make.com (LinkedIn data in)
+src/app/api/publish/   make.com callback after a demo post goes live
 src/components/echo/   ECHO screens and parts
-src/lib/echo/          the engine: library, draft, learning, analyse, checks, ingest
+src/lib/echo/          the engine: library, draft, learning, analyse, stats (filters), checks, ingest, publish
 src/lib/ai.ts          the only file that talks to the AI provider
 src/lib/domain.ts      objectives, metric definitions, data rules
 supabase/migrations/   database tables
@@ -154,7 +156,7 @@ data/clean, data/raw   real data (NOT in git, ask the team lead)
 
 ### make.com
 
-A make.com scenario can push LinkedIn data straight in:
+**1. LinkedIn data in.** A make.com scenario can push LinkedIn data straight in:
 
 ```
 POST https://<your-app>/api/ingest
@@ -163,7 +165,35 @@ Body:   { "as_of": "2026-11-26", "posts": [ { "post_id": "urn:li:share:…", "ur
           "format": "image", "text": "…", "impressions": 120, "clicks": 4, "likes": 6, "comments": 0, "shares": 1 } ] }
 ```
 
-The reply is a match report: `{ received, matched, added, metrics, skipped }`.
+The reply is a match report: `{ received, matched, added, metrics, skipped }`. Add `"page": "demo"` when the scenario syncs the **dummy** profile: those posts are stored as `source = 'demo'` and never count in Signals, insights or learning.
+
+**2. Demo posts out.** On Write, each post approved at Gate 2 has a "Send to demo LinkedIn" button (two clicks). ECHO sends it to a make.com webhook, the scenario posts it on the team's dummy profile, then calls ECHO back with the live link. The real Upskill Today page is never posted to.
+
+ECHO sends:
+
+```json
+{ "publication_id": "…", "target": "demo", "text": "the approved post", "has_image": true,
+  "image_url": "https://…signed link, valid 1 hour…", "image_filename": "….png",
+  "callback_url": "https://<your-app>/api/publish/callback", "callback_token": "one-time token" }
+```
+
+make.com answers on `callback_url`:
+
+```json
+{ "publication_id": "…", "callback_token": "…", "status": "published", "linkedin_post_id": "urn:li:share:…" }
+```
+
+(`"status": "failed", "error": "…"` reports a failure.) The token works once, so no ECHO secret lives in make.com.
+
+Set up:
+
+1. Ask the team lead for `make/ECHO-publish-demo.blueprint.json`. Blueprints are kept out of this public repo on purpose (`.gitignore`).
+2. In make.com: Create a new scenario → ⋯ → Import Blueprint. Click the webhook module and create a webhook. Copy its URL into `.env.local` as `MAKE_PUBLISH_WEBHOOK_URL`.
+3. Connect both LinkedIn modules to the **dummy** profile, never the Upskill Today one. The blueprint uses "Create a User Image Post" and "Create a User Text Post" (personal profile). If make.com shows a module as unknown after import, delete it, add that module from the LinkedIn app, map Content to `1.text` (and the image file from module 3 for the image post), and in "Tell ECHO it is live" map `linkedin_post_id` to the new module's post ID.
+4. make.com must reach the callback, so ECHO needs a public address: the Vercel deployment, or a tunnel to your laptop with `APP_URL` set to it.
+5. Click "Run once" in make.com, then press "Send to demo LinkedIn" on Write to teach the webhook its data shape. Turn the scenario on.
+
+Run the database migrations first (`npm run db:push`): images and the sync log need `20261127120000_post_images.sql` and `20261127130000_demo_publishing.sql`.
 
 ---
 
