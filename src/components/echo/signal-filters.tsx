@@ -7,7 +7,7 @@ import {
   DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { DATA_RULES, FORMATS, OBJECTIVES, OBJECTIVE_KEYS, type Objective } from "@/lib/domain";
-import { COMPARES, DEFAULT_FILTERS, GRAINS, PERIODS, isDefault, type Filters, type Range } from "@/lib/echo/stats";
+import { COMPARES, DEFAULT_FILTERS, GRAINS, PERIODS, filtersToQuery, isDefault, type Filters, type Range } from "@/lib/echo/stats";
 import { cn } from "@/lib/utils";
 
 /** One filter bar for the whole Signals page. It stays in view while scrolling and lives in the URL. */
@@ -96,6 +96,14 @@ export function SignalFilters({ value, onChange, formats, topics, cur, cmp, anch
         {" · "}
         <span className="num text-foreground">{posts}</span> posts, <span className="num">{comparable}</span> comparable
         {posts > comparable && ` (${posts - comparable} under ${DATA_RULES.minImpressions} impressions left out)`}
+        <a
+          href={`/signals/report${filtersToQuery(value) ? `?${filtersToQuery(value)}` : ""}`}
+          target="_blank"
+          rel="noreferrer"
+          className="kicker float-right underline-offset-4 hover:text-foreground hover:underline"
+        >
+          Report for this view →
+        </a>
       </p>
     </div>
   );

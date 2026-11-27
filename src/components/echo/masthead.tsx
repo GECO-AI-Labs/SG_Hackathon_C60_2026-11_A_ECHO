@@ -16,7 +16,7 @@ const NAV = [
 export function Masthead({ name, pending, dateline }: { name: string; pending: number; dateline: string }) {
   const path = usePathname();
   return (
-    <header>
+    <header className="print:hidden">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 pt-4 text-[0.7rem] sm:px-6">
         <span className="kicker">{dateline}</span>
         <span className="kicker hidden sm:inline">Upskill Today · LinkedIn</span>

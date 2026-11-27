@@ -335,6 +335,18 @@ export async function postDetailAction(postId: string) {
   return { text: post.text as string, snapshots: snaps ?? [], materialId: (material?.id as string | undefined) ?? null };
 }
 
+/* ───────────── Period report ───────────── */
+
+/** Audit row for each report opened, with how long it took to build: the "reporting time" measure (brief §10). */
+export async function logReportAction(builtMs: number, query: string, scope: string) {
+  const { supabase, user } = await requireUser();
+  const { clip } = await import("@/lib/edit");
+  await supabase.from("events").insert({
+    actor: user.id, action: "report.generated", target_type: "report",
+    detail: { built_ms: Math.max(0, Math.round(Number(builtMs) || 0)), filters: clip(String(query), 500), scope: clip(String(scope), 300) },
+  });
+}
+
 /* ───────────── Ask ECHO (Signals) ───────────── */
 
 /** `query` is the Signals filter query string; the answer then covers only that view. */
