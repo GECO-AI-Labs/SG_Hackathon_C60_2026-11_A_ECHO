@@ -108,7 +108,8 @@ export function SignalsView(props: {
         <UploadReport />
       </header>
 
-      <div className="-mt-6 !mb-8">
+      {/* Sticky on the wrapper: a sticky element only travels inside its parent. */}
+      <div className="sticky top-0 z-30 -mt-6 !mb-8">
         <SignalFilters
           value={filters} onChange={setFilters} formats={options.formats} topics={options.topics}
           cur={cur} cmp={cmp} anchor={props.anchor} posts={inView.length} comparable={comparable.length}
@@ -202,7 +203,7 @@ export function SignalsView(props: {
       <HitRateTrend posts={inView} perPost={results.perPost} grain={filters.grain} from={cur.from} to={cur.to} />
 
       {/* Format / topic comparison */}
-      <section className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
+      <section className="grid grid-cols-1 gap-10 lg:grid-cols-[1.4fr_1fr]">
         <div>
           <SectionHead kicker="Compare" title={groupBy === "format" ? "Which formats work" : "Which topics work"}>
             <div className="flex flex-wrap items-center gap-6">
@@ -263,7 +264,7 @@ export function SignalsView(props: {
         showSinceLast={props.reportPeriods.length > 1} range={cur} onSelect={setSelected}
       />
 
-      <section className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
+      <section className="grid grid-cols-1 gap-10 lg:grid-cols-[1.4fr_1fr]">
         <AskEcho query={filtersToQuery(filters)} scope={scope} />
         <div>
           <p className="kicker">Who follows the page</p>
@@ -495,7 +496,7 @@ function ObjectiveResults({ results }: { results: { total: number; met: number; 
   const fmtBase = (m: string, v: number) => (m === "engagement_rate" || m === "ctr" ? pct(v) : Math.round(v).toLocaleString());
   const inferred = results.byObjective.reduce((s, o) => s + o.posts - o.confirmed, 0);
   return (
-    <section className="grid gap-10 lg:grid-cols-[1fr_1.6fr]">
+    <section className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_1.6fr]">
       <div>
         <p className="kicker">Results against objectives</p>
         <h2 className="text-2xl font-medium">Did posts hit their goal?</h2>

@@ -25,7 +25,7 @@ export function SignalFilters({ value, onChange, formats, topics, cur, cmp, anch
   const set = (patch: Partial<Filters>) => onChange({ ...value, ...patch });
 
   return (
-    <div className="sticky top-0 z-30 -mx-4 border-y border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
+    <div className="-mx-4 border-y border-border bg-background/95 px-4 py-3 backdrop-blur sm:-mx-6 sm:px-6">
       <div className="flex flex-wrap items-center gap-2">
         <Select value={value.period} onValueChange={(v) => set({ period: v as Filters["period"] })}>
           <SelectTrigger size="sm" className="w-44 bg-card text-xs" aria-label="Period"><SelectValue /></SelectTrigger>
@@ -59,7 +59,7 @@ export function SignalFilters({ value, onChange, formats, topics, cur, cmp, anch
         />
 
         <Select value={value.status} onValueChange={(v) => set({ status: v as Filters["status"] })}>
-          <SelectTrigger size="sm" className="w-40 bg-card text-xs" aria-label="Goal status"><SelectValue /></SelectTrigger>
+          <SelectTrigger size="sm" className="w-48 bg-card text-xs" aria-label="Goal status"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Confirmed + inferred</SelectItem>
             <SelectItem value="confirmed">Confirmed goals</SelectItem>

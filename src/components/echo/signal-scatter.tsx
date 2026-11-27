@@ -63,7 +63,7 @@ export function SignalScatter({ posts, allPosts, onSelect }: { posts: PostRow[];
   const open = (id: string, url: string) => (onSelect ? onSelect(id) : window.open(url, "_blank", "noreferrer"));
 
   return (
-    <section className="grid gap-10 lg:grid-cols-[1.4fr_1fr]">
+    <section className="grid grid-cols-1 gap-10 lg:grid-cols-[1.4fr_1fr]">
       <div>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
